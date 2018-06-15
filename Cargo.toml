@@ -1,0 +1,12 @@
+[package]
+name = "observe"
+version = "0.1.0"
+authors = ["Stanislav Panferov <stanislav.panferov@revjet.com>"]
+
+[dependencies]
+snowflake = "1.2"
+typemap = "*"
+
+[dev-dependencies]
+mockers = "0.12.0"
+mockers_derive = "0.12.0"
