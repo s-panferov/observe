@@ -87,6 +87,5 @@ fn become_observed() {
   scenario.checkpoint();
 
   scenario.expect(spy.trigger_call().and_return_default().times(1));
-
   mem::drop(reaction);
 }
