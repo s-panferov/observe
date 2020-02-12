@@ -7,8 +7,8 @@ mod reaction;
 mod transaction;
 mod value;
 
-pub use atom::Atom;
-pub use computed::Computed;
-pub use reaction::{autorun, reaction, Reaction};
-pub use transaction::transaction;
-pub use value::Value;
+pub use crate::atom::Atom;
+pub use crate::computed::Computed;
+pub use crate::reaction::{autorun, reaction, Reaction};
+pub use crate::transaction::transaction;
+pub use crate::value::Value;
