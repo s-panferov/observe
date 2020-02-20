@@ -6,32 +6,35 @@ use crate::suite::spy::{SharedMock, Spy};
 fn simple_computed() {
     let spy = SharedMock::new();
 
-    let mut value = Value::new(10);
+    let value = Value::new(10);
     let computed = Computed::new({
         let value = value.clone();
         let spy = spy.clone();
         move |ctx| {
             spy.get().trigger();
-            *value.observe(ctx) * 2
+            let i = *value.observe(ctx);
+            i * 2
         }
     });
 
     spy.get().expect_trigger().return_const(()).times(1);
+
     assert_eq!(*computed.once(), 20);
+
     spy.get().checkpoint();
 
     spy.get().expect_trigger().return_const(()).times(1);
 
-    value.set_now(20);
     value.set_now(30);
-    value.set_now(20);
+    value.set_now(40);
+    value.set_now(30);
 
-    assert_eq!(*computed.once(), 40);
+    assert_eq!(*computed.once(), 60);
 }
 
 #[test]
 fn computed_chain() {
-    let mut value = Value::new(10);
+    let value = Value::new(10);
 
     let double_spy = SharedMock::new();
     let quadruple_spy = SharedMock::new();

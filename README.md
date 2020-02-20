@@ -9,7 +9,7 @@ The main goal of the library is to provide a state management library for web-ba
 Current state:
 
 - [x] Core
-  - [x] Atom — a basic underlying structure for all other things
+  - [x] Tracker — a basic underlying structure for all other things
   - [x] Value — a simple observable box with a value
   - [x] Computed — a calculation based on `Value`s and another `Computed` values
   - [x] Reaction — allows to setup callbacks and react to state changes

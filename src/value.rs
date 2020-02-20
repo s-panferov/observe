@@ -1,135 +1,78 @@
-use std::cell::Ref;
-use std::cell::RefCell;
-use std::mem;
-use std::rc::{Rc, Weak};
-
-use crate::atom::{Atom, EvalContext, EvaluateKey, Evaluateable};
 use crate::transaction::Transaction;
+use core::marker::PhantomData;
+use std::fmt::Debug;
+use std::{hash::Hash, sync::Arc};
 
-pub struct Value<T: Eq + 'static> {
-    body: Rc<RefCell<ValueBody<T>>>,
+use crate::context::EvalContext;
+use crate::{body::ValueBody, tracker::Tracker};
+
+#[derive(Clone)]
+pub struct Value<T: Hash> {
+    tracker: Tracker,
+    _t: PhantomData<T>,
 }
 
-impl<T: Eq + 'static> Clone for Value<T> {
-    fn clone(&self) -> Self {
-        return Value {
-            body: self.body.clone(),
-        };
-    }
-}
-
-impl<T: Eq + 'static> Value<T> {
+impl<T: Hash + Send + Sync + Debug + 'static> Value<T> {
     pub fn new(value: T) -> Value<T> {
-        let value = Value {
-            body: Rc::new(RefCell::new(ValueBody::new(value))),
-        };
+        let tracker = Tracker::new("Value".to_string());
+        let body = ValueBody::new(value);
+        tracker.get_mut().set_computation(body);
+        Value {
+            tracker,
+            _t: PhantomData,
+        }
+    }
 
-        {
-            let mut body = value.body.borrow_mut();
-            body.atom
-                .ext_mut()
-                .insert::<EvaluateKey>(Box::new(value.weak()));
+    fn _observe(&self, ctx: Option<&mut EvalContext>) -> Arc<T> {
+        if ctx.is_some() {
+            ctx.unwrap().access(self.tracker.clone());
         }
 
-        value
-    }
-
-    pub fn weak(&self) -> WeakValue<T> {
-        return WeakValue {
-            body: Rc::downgrade(&self.body),
-        };
-    }
-
-    pub fn observe(&self, ctx: &mut EvalContext) -> Ref<T> {
-        self.get_inner(Some(ctx))
-    }
-
-    pub fn once(&self) -> Ref<T> {
-        self.get_inner(None)
-    }
-
-    pub fn set(&mut self, next: T, tx: &mut Transaction) {
-        self.set_inner(next, Some(tx))
-    }
-
-    pub fn set_now(&mut self, next: T) {
-        self.set_inner(next, None)
-    }
-
-    pub fn on_become_observed<F: Fn() + 'static>(&mut self, cb: F) {
-        self.body.borrow_mut().atom.on_become_observed(cb)
-    }
-
-    pub fn on_become_unobserved<F: Fn() + 'static>(&mut self, cb: F) {
-        self.body.borrow_mut().atom.on_become_unobserved(cb)
-    }
-
-    fn get_inner(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
-        {
-            let atom = self.body.borrow().atom.clone();
-            if ctx.is_some() {
-                atom.report_used_in(ctx.unwrap());
-            }
-            atom.update();
+        if self.tracker.get().should_update() {
+            self.tracker.get_mut().update();
         }
 
-        let body = self.body.borrow();
-        Ref::map(body, |b| &b.value)
+        let tracker = self.tracker.get();
+        tracker.get().downcast::<T>().unwrap()
     }
 
-    fn set_inner(&mut self, next: T, tx: Option<&mut Transaction>) {
-        let changed = {
-            let mut body = self.body.borrow_mut();
-            if body.value != next {
-                body.next_value = Some(next);
-                true
-            } else {
-                false
-            }
-        };
+    pub fn observe(&self, ctx: &mut EvalContext) -> Arc<T> {
+        self._observe(Some(ctx))
+    }
 
-        if changed {
-            let mut atom = self.body.borrow().atom.clone();
-            atom.report_changed(tx);
-        }
+    pub fn set(&self, next: T, tx: &mut Transaction) {
+        self.tracker.get_mut().set(Arc::new(next));
+        tx.mark_changed(self.tracker.weak().clone());
+    }
+
+    pub fn set_now(&self, next: T) {
+        self.tracker.get_mut().set(Arc::new(next));
+        self.tracker.notify_reactions()
     }
 }
 
-pub struct WeakValue<T: Eq + 'static> {
-    body: Weak<RefCell<ValueBody<T>>>,
-}
+#[cfg(test)]
+mod tests {
+    use super::Value;
+    use crate::context::EvalContext;
+    use crate::tracker::{Expired, Freshness, Tracker};
 
-impl<T: Eq + 'static> Evaluateable for WeakValue<T> {
-    fn evaluate(&mut self, _ctx: &mut EvalContext) -> bool {
-        let body = self.body.upgrade().expect("Access to destroyed value");
-        let mut mut_body = body.borrow_mut();
-        mut_body.evaluate()
-    }
-}
+    #[test]
+    fn expire_on_set() {
+        let tracker = Tracker::new("Tracker".to_owned());
+        let value = Value::new(10);
 
-pub struct ValueBody<T: Eq + 'static> {
-    value: T,
-    next_value: Option<T>,
-    atom: Atom,
-}
+        tracker.get_mut().set_computation({
+            let value = value.clone();
+            move |ctx: &mut EvalContext| *value.observe(ctx)
+        });
 
-impl<T: Eq + 'static> ValueBody<T> {
-    pub fn new(value: T) -> ValueBody<T> {
-        ValueBody {
-            value,
-            next_value: None,
-            atom: Atom::new("Value".to_string()),
-        }
-    }
+        tracker.get_mut().update();
 
-    fn evaluate(&mut self) -> bool {
-        if self.next_value.is_some() {
-            let next = mem::replace(&mut self.next_value, None);
-            let value = next.unwrap();
-            self.value = value;
-            true
-        } else {
-            false
-        }
+        assert_eq!(*tracker.get().state(), Freshness::UpToDate);
+
+        value.set_now(20);
+
+        assert_eq!(*tracker.get().state(), Freshness::Expired(Expired::Maybe));
     }
 }

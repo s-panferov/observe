@@ -1,23 +1,24 @@
-use observe::{autorun, transaction, Computed, Value};
+use mockall::predicate::*;
+
+use observe::{autorun, transaction, Value};
 
 use crate::suite::spy::{SharedMock, Spy};
-use std::mem;
-
-use mockall::predicate::*;
 
 #[test]
 fn check_autorun() {
     let spy = SharedMock::new();
+    let value = Value::new(10);
 
-    let mut value = Value::new(10);
-
-    let reaction = autorun({
-        let value = value.clone();
-        let spy = spy.clone();
-        move |ctx| {
-            spy.get().u32(*value.observe(ctx));
-        }
-    });
+    let reaction = autorun(
+        {
+            let value = value.clone();
+            let spy = spy.clone();
+            move |ctx| {
+                spy.get().u32(*value.observe(ctx));
+            }
+        },
+        None,
+    );
 
     spy.get()
         .expect_u32()
@@ -67,46 +68,11 @@ fn check_autorun() {
         });
 
         spy.get().checkpoint();
+
         spy.get()
             .expect_u32()
             .with(eq(40))
             .return_const(())
             .times(1);
     });
-}
-
-#[test]
-fn become_observed() {
-    let spy = SharedMock::new();
-
-    let mut value = Value::new(10);
-    let double = Computed::new({
-        let value = value.clone();
-        move |ctx| *value.observe(ctx) * 2
-    });
-
-    value.on_become_observed({
-        let spy = spy.clone();
-        move || spy.get().trigger()
-    });
-
-    value.on_become_unobserved({
-        let spy = spy.clone();
-        move || spy.get().trigger()
-    });
-
-    let reaction = autorun({
-        let double = double.clone();
-        move |ctx| {
-            println!("{}", *double.observe(ctx));
-        }
-    });
-
-    spy.get().expect_trigger().return_const(()).times(1);
-    reaction.run();
-
-    spy.get().checkpoint();
-
-    spy.get().expect_trigger().return_const(()).times(1);
-    mem::drop(reaction);
 }

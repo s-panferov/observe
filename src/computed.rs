@@ -1,126 +1,46 @@
-use std::cell::Ref;
-use std::cell::RefCell;
-use std::mem;
-use std::ops::Deref;
-use std::rc::{Rc, Weak};
+use std::hash::Hash;
+use std::{marker::PhantomData, sync::Arc};
 
-use crate::atom::{Atom, EvalContext, EvaluateKey, Evaluateable};
+use crate::context::EvalContext;
+use crate::{body::ComputedBody, tracker::Tracker};
 
-pub type Computation<T> = dyn Fn(&mut EvalContext) -> T;
-
-pub struct ComputedGuard<'a, T: Eq + 'a> {
-    guard: Ref<'a, ComputedBody<T>>,
+#[derive(Clone)]
+pub struct Computed<T: Hash + Send + Sync> {
+    tracker: Tracker,
+    _t: PhantomData<T>,
 }
 
-impl<'b, T: Eq> Deref for ComputedGuard<'b, T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.guard.value.as_ref().unwrap()
-    }
-}
-
-pub struct Computed<T: Eq + 'static> {
-    body: Rc<RefCell<ComputedBody<T>>>,
-}
-
-impl<T: Eq + 'static> Clone for Computed<T> {
-    fn clone(&self) -> Self {
-        return Computed {
-            body: self.body.clone(),
-        };
-    }
-}
-
-impl<T: Eq + 'static> Computed<T> {
-    pub fn new<F: Fn(&mut EvalContext) -> T + 'static>(computation: F) -> Self {
-        let computed = Computed {
-            body: Rc::new(RefCell::new(ComputedBody::new(Box::new(computation)))),
-        };
-
+impl<T: Hash + Send + Sync + 'static> Computed<T> {
+    pub fn new<F: Fn(&mut EvalContext) -> T + 'static>(handler: F) -> Self {
+        let tracker = Tracker::new("Computed".to_owned());
         {
-            let mut body = computed.body.borrow_mut();
-            body.atom
-                .ext_mut()
-                .insert::<EvaluateKey>(Box::new(computed.weak()));
+            let mut mut_tracker = tracker.get_mut();
+            mut_tracker.set_computation(ComputedBody::new(None, handler));
         }
-
-        computed
-    }
-
-    fn weak(&self) -> WeakComputed<T> {
-        return WeakComputed {
-            body: Rc::downgrade(&self.body),
-        };
-    }
-
-    pub fn on_become_observed<F: Fn() + 'static>(&mut self, cb: F) {
-        self.body.borrow_mut().atom.on_become_observed(cb)
-    }
-
-    pub fn on_become_unobserved<F: Fn() + 'static>(&mut self, cb: F) {
-        self.body.borrow_mut().atom.on_become_unobserved(cb)
-    }
-
-    fn get_inner(&self, ctx: Option<&mut EvalContext>) -> ComputedGuard<T> {
-        {
-            let atom = self.body.borrow().atom.clone();
-            if ctx.is_some() {
-                atom.report_used_in(ctx.unwrap());
-            }
-            atom.update();
-        }
-
-        let body = self.body.borrow();
-        ComputedGuard { guard: body }
-    }
-
-    pub fn once(&self) -> ComputedGuard<T> {
-        self.get_inner(None)
-    }
-
-    pub fn observe(&self, ctx: &mut EvalContext) -> ComputedGuard<T> {
-        self.get_inner(Some(ctx))
-    }
-}
-
-pub struct WeakComputed<T: Eq> {
-    body: Weak<RefCell<ComputedBody<T>>>,
-}
-
-impl<T: Eq + 'static> Evaluateable for WeakComputed<T> {
-    fn evaluate(&mut self, ctx: &mut EvalContext) -> bool {
-        let body = self.body.upgrade().expect("Access to destroyed Computed");
-        let mut mut_body = body.borrow_mut();
-        mut_body.evaluate(ctx)
-    }
-}
-
-impl<T: Eq + 'static> WeakComputed<T> {}
-
-struct ComputedBody<T> {
-    value: Option<T>,
-    computation: Box<Computation<T>>,
-    atom: Atom,
-}
-
-impl<T: Eq + 'static> ComputedBody<T> {
-    fn new(computation: Box<Computation<T>>) -> Self {
-        ComputedBody {
-            value: None,
-            computation,
-            atom: Atom::new("Computed".to_string()),
+        Computed {
+            tracker,
+            _t: PhantomData,
         }
     }
-}
 
-impl<T: Eq + 'static> Evaluateable for ComputedBody<T> {
-    fn evaluate(&mut self, ctx: &mut EvalContext) -> bool {
-        let res = (self.computation)(ctx);
-        if self.value.as_ref() != Some(&res) {
-            mem::replace(&mut self.value, Some(res));
-            return true;
-        } else {
-            return false;
+    fn get(&self, ctx: Option<&mut EvalContext>) -> Arc<T> {
+        if ctx.is_some() {
+            ctx.unwrap().access(self.tracker.clone());
         }
+
+        if self.tracker.get().should_update() {
+            self.tracker.get_mut().update();
+        }
+
+        let tracker = self.tracker.get();
+        tracker.get().downcast::<T>().unwrap()
+    }
+
+    pub fn observe(&self, ctx: &mut EvalContext) -> Arc<T> {
+        self.get(Some(ctx))
+    }
+
+    pub fn once(&self) -> Arc<T> {
+        self.get(None)
     }
 }

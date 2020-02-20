@@ -1,12 +1,9 @@
-use std::cell::RefCell;
 use std::collections::HashSet;
-use std::rc::Rc;
 
-use crate::atom::Atom;
-use crate::reaction::{Reaction, ReactionKey};
+use crate::tracker::WeakTracker;
 
 pub struct Transaction {
-    changed: HashSet<Atom>,
+    changed: HashSet<WeakTracker>,
 }
 
 impl Transaction {
@@ -16,45 +13,17 @@ impl Transaction {
         }
     }
 
-    pub fn mark_changed(&mut self, atom: Atom) -> bool {
-        self.changed.insert(atom)
-    }
-
-    pub fn fire_reactions<'a, I>(changed: I)
-    where
-        I: Iterator<Item = &'a Atom>,
-    {
-        let affected: Rc<RefCell<HashSet<Reaction>>> = Rc::new(RefCell::new(HashSet::new()));
-
-        let mut walker = {
-            let affected = affected.clone();
-            move |atom: &Atom| {
-                let ext = atom.ext();
-                let reaction = ext.get::<ReactionKey>();
-                if reaction.is_some() {
-                    let reaction = reaction.unwrap().0.upgrade();
-                    if reaction.is_some() {
-                        affected.borrow_mut().insert(reaction.unwrap());
-                    }
-                    false
-                } else {
-                    atom.is_observed()
-                }
-            }
-        };
-
-        // find all affected reactions
-        for changed in changed {
-            changed.walk(&mut walker)
-        }
-
-        for reaction in &mut affected.borrow().iter() {
-            reaction.clone().maybe_run();
-        }
+    pub fn mark_changed(&mut self, tracker: WeakTracker) -> bool {
+        self.changed.insert(tracker)
     }
 
     fn commit(&mut self) {
-        Transaction::fire_reactions(self.changed.iter())
+        for tracker in &self.changed {
+            let tracker = tracker.upgrade();
+            if tracker.is_some() {
+                tracker.unwrap().notify_reactions()
+            }
+        }
     }
 }
 
