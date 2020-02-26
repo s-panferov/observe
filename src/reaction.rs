@@ -4,6 +4,7 @@ use crate::tracker::Tracker;
 use std::fmt;
 use std::mem;
 
+#[derive(Clone)]
 pub struct Reaction {
     tracker: Tracker,
 }
@@ -11,6 +12,12 @@ pub struct Reaction {
 impl fmt::Debug for Reaction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Reaction[tracker: {:?}]", self.tracker)
+    }
+}
+
+impl std::default::Default for Reaction {
+    fn default() -> Self {
+        Reaction::init("Reaction")
     }
 }
 
@@ -25,6 +32,18 @@ impl Reaction {
         Reaction { tracker }
     }
 
+    fn init<T: Into<String>>(name: T) -> Self {
+        let tracker = Tracker::new(name.into());
+        let mut tr = tracker.get_mut();
+        tr.set_is_observer();
+        std::mem::drop(tr);
+        Reaction { tracker }
+    }
+
+    pub fn set_handler<E: TrackerBody + 'static>(&self, handler: E) {
+        self.tracker.get_mut().set_computation(handler);
+    }
+
     pub fn run(&self) {
         self.tracker.get_mut().update();
     }
@@ -32,6 +51,12 @@ impl Reaction {
 
 pub struct Autorun<F: Fn(&mut EvalContext)> {
     handler: F,
+}
+
+impl<F: Fn(&mut EvalContext)> Autorun<F> {
+    pub fn new(handler: F) -> Self {
+        Autorun { handler }
+    }
 }
 
 impl<F: Fn(&mut EvalContext)> TrackerBody for Autorun<F> {

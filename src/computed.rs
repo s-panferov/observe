@@ -10,6 +10,12 @@ pub struct Computed<T: Hash + Send + Sync> {
     _t: PhantomData<T>,
 }
 
+impl<T: Hash + Send + Sync + 'static> std::default::Default for Computed<T> {
+    fn default() -> Self {
+        Computed::<T>::init()
+    }
+}
+
 impl<T: Hash + Send + Sync + 'static> Computed<T> {
     pub fn new<F: Fn(&mut EvalContext) -> T + 'static>(handler: F) -> Self {
         let tracker = Tracker::new("Computed".to_owned());
@@ -20,6 +26,21 @@ impl<T: Hash + Send + Sync + 'static> Computed<T> {
         Computed {
             tracker,
             _t: PhantomData,
+        }
+    }
+
+    fn init() -> Self {
+        let tracker = Tracker::new("Computed".to_owned());
+        Computed {
+            tracker,
+            _t: PhantomData,
+        }
+    }
+
+    pub fn set_handler<F: Fn(&mut EvalContext) -> T + 'static>(&self, handler: F) {
+        {
+            let mut mut_tracker = self.tracker.get_mut();
+            mut_tracker.set_computation(ComputedBody::new(None, handler));
         }
     }
 
