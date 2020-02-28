@@ -11,7 +11,6 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use snowflake::ProcessUniqueId;
 
 use crate::context::{EvalContext, TrackerBody};
-// use crate::lock::Lock;
 use crate::transaction::Transaction;
 
 #[derive(PartialEq, Eq, Debug, Clone)]

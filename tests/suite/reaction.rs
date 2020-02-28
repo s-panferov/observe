@@ -1,13 +1,13 @@
 use mockall::predicate::*;
 
-use observe::{autorun, transaction, Value};
+use observe::{autorun, transaction, Var};
 
 use crate::suite::spy::{SharedMock, Spy};
 
 #[test]
 fn check_autorun() {
     let spy = SharedMock::new();
-    let value = Value::new(10);
+    let value = Var::new(10);
 
     let reaction = autorun(
         {

@@ -1,13 +1,22 @@
+use crate::value::Value;
 use std::hash::Hash;
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::context::EvalContext;
 use crate::{body::ComputedBody, tracker::Tracker};
 
-#[derive(Clone)]
 pub struct Computed<T: Hash + Send + Sync> {
     tracker: Tracker,
     _t: PhantomData<T>,
+}
+
+impl<T: Hash + Send + Sync> Clone for Computed<T> {
+    fn clone(&self) -> Computed<T> {
+        Computed {
+            tracker: self.tracker.clone(),
+            _t: PhantomData,
+        }
+    }
 }
 
 impl<T: Hash + Send + Sync + 'static> std::default::Default for Computed<T> {
@@ -63,5 +72,28 @@ impl<T: Hash + Send + Sync + 'static> Computed<T> {
 
     pub fn once(&self) -> Arc<T> {
         self.get(None)
+    }
+
+    pub fn map<R, F>(&self, handler: F) -> Computed<R>
+    where
+        F: Fn(&mut EvalContext, &T) -> R + 'static,
+        R: Hash + Send + Sync + 'static,
+    {
+        let this = Computed {
+            tracker: self.tracker.clone(),
+            _t: PhantomData,
+        };
+
+        Computed::new(move |ctx| {
+            let value = this.observe(ctx);
+            handler(ctx, &value)
+        })
+    }
+
+    pub fn to_value(&self) -> Value<T> {
+        Value::Computed(Computed {
+            tracker: self.tracker.clone(),
+            _t: PhantomData,
+        })
     }
 }

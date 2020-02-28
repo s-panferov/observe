@@ -1,78 +1,105 @@
-use crate::transaction::Transaction;
-use core::marker::PhantomData;
-use std::fmt::Debug;
-use std::{hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 
+use crate::computed::Computed;
 use crate::context::EvalContext;
-use crate::{body::ValueBody, tracker::Tracker};
+use crate::variable::Var;
 
-#[derive(Clone)]
-pub struct Value<T: Hash> {
-    tracker: Tracker,
-    _t: PhantomData<T>,
+pub enum Value<T: Hash + Send + Sync> {
+    Const(Arc<T>),
+    Var(Var<T>),
+    Computed(Computed<T>),
 }
 
-impl<T: Hash + Send + Sync + Debug + 'static> Value<T> {
-    pub fn new(value: T) -> Value<T> {
-        let tracker = Tracker::new("Value".to_string());
-        let body = ValueBody::new(value);
-        tracker.get_mut().set_computation(body);
-        Value {
-            tracker,
-            _t: PhantomData,
+impl<T: Hash + Send + Sync> Clone for Value<T> {
+    fn clone(&self) -> Value<T> {
+        match self {
+            Value::Const(v) => Value::Const(v.clone()),
+            Value::Var(v) => Value::Var(v.clone()),
+            Value::Computed(v) => Value::Computed(v.clone()),
         }
     }
+}
 
-    fn _observe(&self, ctx: Option<&mut EvalContext>) -> Arc<T> {
-        if ctx.is_some() {
-            ctx.unwrap().access(self.tracker.clone());
-        }
-
-        if self.tracker.get().should_update() {
-            self.tracker.get_mut().update();
-        }
-
-        let tracker = self.tracker.get();
-        tracker.get().downcast::<T>().unwrap()
+impl<T> From<T> for Value<T>
+where
+    T: Send + Sync + Hash,
+{
+    fn from(value: T) -> Value<T> {
+        Value::Const(Arc::new(value))
     }
+}
 
+impl<T> From<Computed<T>> for Value<T>
+where
+    T: Hash + Send + Sync + Debug + 'static,
+{
+    fn from(value: Computed<T>) -> Value<T> {
+        Value::Computed(value)
+    }
+}
+
+impl<T> From<Var<T>> for Value<T>
+where
+    T: Hash + Send + Sync + Debug + 'static,
+{
+    fn from(value: Var<T>) -> Value<T> {
+        Value::Var(value)
+    }
+}
+
+impl<T> Value<T>
+where
+    T: Hash + Send + Sync + Debug + 'static,
+{
     pub fn observe(&self, ctx: &mut EvalContext) -> Arc<T> {
-        self._observe(Some(ctx))
+        match self {
+            Value::Const(v) => v.clone(),
+            Value::Var(v) => v.observe(ctx),
+            Value::Computed(v) => v.observe(ctx),
+        }
     }
 
-    pub fn set(&self, next: T, tx: &mut Transaction) {
-        self.tracker.get_mut().set(Arc::new(next));
-        tx.mark_changed(self.tracker.weak().clone());
+    pub fn once(&self) -> Arc<T> {
+        match self {
+            Value::Const(v) => v.clone(),
+            Value::Var(v) => v.once(),
+            Value::Computed(v) => v.once(),
+        }
     }
 
-    pub fn set_now(&self, next: T) {
-        self.tracker.get_mut().set(Arc::new(next));
-        self.tracker.notify_reactions()
+    pub fn as_var(&self) -> Option<&Var<T>> {
+        match self {
+            Value::Const(_) => None,
+            Value::Var(v) => Some(v),
+            Value::Computed(_) => None,
+        }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::Value;
-    use crate::context::EvalContext;
-    use crate::tracker::{Expired, Freshness, Tracker};
+    pub fn as_const(&self) -> Option<&Arc<T>> {
+        match self {
+            Value::Const(a) => Some(a),
+            Value::Var(v) => None,
+            Value::Computed(_) => None,
+        }
+    }
 
-    #[test]
-    fn expire_on_set() {
-        let tracker = Tracker::new("Tracker".to_owned());
-        let value = Value::new(10);
+    pub fn as_computed(&self) -> Option<&Computed<T>> {
+        match self {
+            Value::Const(_) => None,
+            Value::Var(_) => None,
+            Value::Computed(c) => Some(c),
+        }
+    }
 
-        tracker.get_mut().set_computation({
-            let value = value.clone();
-            move |ctx: &mut EvalContext| *value.observe(ctx)
-        });
-
-        tracker.get_mut().update();
-
-        assert_eq!(*tracker.get().state(), Freshness::UpToDate);
-
-        value.set_now(20);
-
-        assert_eq!(*tracker.get().state(), Freshness::Expired(Expired::Maybe));
+    pub fn map<R, F>(&self, handler: F) -> Computed<R>
+    where
+        F: Fn(&mut EvalContext, &T) -> R + 'static,
+        R: Hash + Send + Sync + 'static,
+    {
+        let this = self.clone();
+        Computed::new(move |ctx| {
+            let value = this.observe(ctx);
+            handler(ctx, &value)
+        })
     }
 }

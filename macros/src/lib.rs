@@ -1,10 +1,10 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 
-#[proc_macro_derive(Observe, attributes(computed, value, reaction))]
-pub fn observe_derive(original: TokenStream) -> TokenStream {
+#[proc_macro_derive(Observe, attributes(computed, reaction, autorun))]
+pub fn observe_derive(_original: TokenStream) -> TokenStream {
     // let original = syn::parse_macro_input!(original as syn::ItemStruct);
     TokenStream::new()
 }
@@ -86,9 +86,11 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
         }
     });
 
+    let (impl_generics, ty_generics, where_clause) = original.generics.split_for_impl();
+
     let output = quote! {
       #original
-      impl #name {
+      impl #impl_generics #name #ty_generics #where_clause {
         fn __init_observables(self: &Arc<Self>) {
           #(#computed)*
           #(#reaction)*
@@ -108,9 +110,22 @@ pub fn create(_args: TokenStream, original: TokenStream) -> TokenStream {
     );
 
     let mut new_fn = original.clone();
+
+    let mut arg_pat = Vec::new();
+    for input in original.sig.inputs.iter() {
+        match input {
+            syn::FnArg::Typed(syn::PatType { pat, .. }) => {
+                arg_pat.push(quote!(#pat));
+            }
+            _ => {}
+        }
+    }
+
     let block = proc_macro::TokenStream::from(quote! {
       {
-        let this = Self::#temp_ident();
+        let this = Self::#temp_ident(
+          #(#arg_pat),*
+        );
         this.__init_observables();
         this
       }
@@ -127,22 +142,4 @@ pub fn create(_args: TokenStream, original: TokenStream) -> TokenStream {
     };
 
     proc_macro::TokenStream::from(output)
-}
-
-#[proc_macro_attribute]
-pub fn value(_args: TokenStream, original: TokenStream) -> TokenStream {
-    // let original = syn::parse_macro_input!(original as syn::ItemStruct);
-    original
-}
-
-#[proc_macro_attribute]
-pub fn computed(_args: TokenStream, original: TokenStream) -> TokenStream {
-    // let original = syn::parse_macro_input!(original as syn::ItemStruct);
-    original
-}
-
-#[proc_macro_attribute]
-pub fn action(_args: TokenStream, original: TokenStream) -> TokenStream {
-    // let original = syn::parse_macro_input!(original as syn::ItemStruct);
-    original
 }

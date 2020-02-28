@@ -1,13 +1,11 @@
-extern crate snowflake;
-
 mod body;
 mod computed;
 mod context;
-// mod lock;
 mod reaction;
 mod tracker;
 mod transaction;
 mod value;
+mod variable;
 
 #[cfg(test)]
 pub mod test;
@@ -20,3 +18,4 @@ pub use crate::reaction::{autorun, reaction, Autorun, Effect, Reaction};
 pub use crate::tracker::Tracker;
 pub use crate::transaction::{transaction, Transaction};
 pub use crate::value::Value;
+pub use crate::variable::Var;
