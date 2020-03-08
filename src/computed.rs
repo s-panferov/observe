@@ -5,6 +5,7 @@ use std::{marker::PhantomData, sync::Arc};
 use crate::context::EvalContext;
 use crate::{body::ComputedBody, tracker::Tracker};
 
+#[derive(Debug)]
 pub struct Computed<T: Hash + Send + Sync> {
     tracker: Tracker,
     _t: PhantomData<T>,
@@ -58,8 +59,8 @@ impl<T: Hash + Send + Sync + 'static> Computed<T> {
             ctx.unwrap().access(self.tracker.clone());
         }
 
-        if self.tracker.get().should_update() {
-            self.tracker.get_mut().update();
+        if self.tracker.get().should_evaluate() {
+            self.tracker.get_mut().evaluate();
         }
 
         let tracker = self.tracker.get();

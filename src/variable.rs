@@ -7,6 +7,7 @@ use std::{hash::Hash, sync::Arc};
 use crate::context::EvalContext;
 use crate::{body::ValueBody, tracker::Tracker, value::Value};
 
+#[derive(Debug)]
 pub struct Var<T: Hash> {
     tracker: Tracker,
     _t: PhantomData<T>,
@@ -37,8 +38,8 @@ impl<T: Hash + Send + Sync + Debug + 'static> Var<T> {
             ctx.unwrap().access(self.tracker.clone());
         }
 
-        if self.tracker.get().should_update() {
-            self.tracker.get_mut().update();
+        if self.tracker.get().should_evaluate() {
+            self.tracker.get_mut().evaluate();
         }
 
         let tracker = self.tracker.get();

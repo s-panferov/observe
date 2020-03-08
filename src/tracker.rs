@@ -74,7 +74,11 @@ impl Tracker {
 
     pub fn notify_reactions(&self) {
         if self.get().is_observer {
-            self.get_mut().update();
+            let mut this = self.get_mut();
+            match &this.reaction_cb {
+                Some(cb) => cb(),
+                None => this.update(),
+            }
         } else if self.get().is_observed() {
             // We should have a reaction somewhere up
             let used_by = self.get().used_by.clone();
@@ -99,6 +103,7 @@ pub struct RawTracker {
     observation_counter: i8,
     is_observer: bool,
     reference: Option<WeakTracker>,
+    reaction_cb: Option<Box<dyn Fn()>>,
     observed_cb: Option<Box<dyn Fn()>>,
     unobserved_cb: Option<Box<dyn Fn()>>,
     body: Option<Box<dyn TrackerBody>>,
@@ -129,6 +134,7 @@ impl RawTracker {
             reference: None,
             is_observer: false,
             observation_counter: 0,
+            reaction_cb: None,
             observed_cb: None,
             unobserved_cb: None,
             body: None,
@@ -149,6 +155,10 @@ impl RawTracker {
 
     pub fn on_unobserved<F: Fn() + 'static>(&mut self, cb: F) {
         self.unobserved_cb = Some(Box::new(cb));
+    }
+
+    pub fn on_reaction<F: Fn() + 'static>(&mut self, cb: F) {
+        self.reaction_cb = Some(Box::new(cb));
     }
 
     pub fn set_computation<F: TrackerBody + 'static>(&mut self, cb: F) {
@@ -182,15 +192,15 @@ impl RawTracker {
         tx.mark_changed(self.weak_ref().clone());
     }
 
-    pub fn should_update(&self) -> bool {
+    pub fn should_evaluate(&self) -> bool {
         match self.state {
             Freshness::UpToDate => false,
             Freshness::Expired(Expired::ForSure) => true,
             Freshness::Expired(Expired::Maybe) => {
                 let mut changed = false;
                 for (tracker, hash) in self.based_on.iter() {
-                    if tracker.get().should_update() {
-                        tracker.get_mut().update();
+                    if tracker.get().should_evaluate() {
+                        tracker.get_mut().evaluate();
                     }
                     if &tracker.get().hash != hash {
                         changed = true;
@@ -203,7 +213,7 @@ impl RawTracker {
     }
 
     pub fn update(&mut self) {
-        if self.should_update() {
+        if self.should_evaluate() {
             self.evaluate()
         }
     }
@@ -220,7 +230,7 @@ impl RawTracker {
         }
     }
 
-    fn evaluate(&mut self) {
+    pub fn evaluate(&mut self) {
         let evaluate = self.body.as_mut();
         let prev_used = mem::replace(&mut self.based_on, HashMap::new());
         let ctx = match evaluate {

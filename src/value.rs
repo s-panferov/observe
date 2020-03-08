@@ -4,10 +4,17 @@ use crate::computed::Computed;
 use crate::context::EvalContext;
 use crate::variable::Var;
 
+#[derive(Debug)]
 pub enum Value<T: Hash + Send + Sync> {
     Const(Arc<T>),
     Var(Var<T>),
     Computed(Computed<T>),
+}
+
+impl<T: Hash + Default + Send + Sync> Default for Value<T> {
+    fn default() -> Self {
+        Value::Const(Arc::new(T::default()))
+    }
 }
 
 impl<T: Hash + Send + Sync> Clone for Value<T> {
@@ -26,6 +33,15 @@ where
 {
     fn from(value: T) -> Value<T> {
         Value::Const(Arc::new(value))
+    }
+}
+
+impl<T> From<T> for Value<Option<T>>
+where
+    T: Send + Sync + Hash,
+{
+    fn from(value: T) -> Value<Option<T>> {
+        Value::Const(Arc::new(Some(value)))
     }
 }
 
@@ -78,7 +94,7 @@ where
     pub fn as_const(&self) -> Option<&Arc<T>> {
         match self {
             Value::Const(a) => Some(a),
-            Value::Var(v) => None,
+            Value::Var(_v) => None,
             Value::Computed(_) => None,
         }
     }
