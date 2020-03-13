@@ -7,8 +7,9 @@ use std::iter::FromIterator;
 use std::mem;
 use std::sync::{Arc, Weak};
 
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use snowflake::ProcessUniqueId;
+
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::context::{EvalContext, TrackerBody};
 use crate::transaction::Transaction;
@@ -65,19 +66,19 @@ impl Tracker {
     }
 
     pub fn get(&self) -> RwLockReadGuard<RawTracker> {
-        self.body.read()
+        self.body.read().unwrap()
     }
 
     pub fn get_mut(&self) -> RwLockWriteGuard<RawTracker> {
-        self.body.write()
+        self.body.write().unwrap()
     }
 
     pub fn notify_reactions(&self) {
         if self.get().is_observer {
-            let mut this = self.get_mut();
-            match &this.reaction_cb {
+            let this = self.get().reaction_cb.clone();
+            match this {
                 Some(cb) => cb(),
-                None => this.update(),
+                None => self.get_mut().update(),
             }
         } else if self.get().is_observed() {
             // We should have a reaction somewhere up
@@ -103,9 +104,9 @@ pub struct RawTracker {
     observation_counter: i8,
     is_observer: bool,
     reference: Option<WeakTracker>,
-    reaction_cb: Option<Box<dyn Fn()>>,
-    observed_cb: Option<Box<dyn Fn()>>,
-    unobserved_cb: Option<Box<dyn Fn()>>,
+    reaction_cb: Option<Arc<dyn Fn()>>,
+    observed_cb: Option<Arc<dyn Fn()>>,
+    unobserved_cb: Option<Arc<dyn Fn()>>,
     body: Option<Box<dyn TrackerBody>>,
 }
 
@@ -150,15 +151,15 @@ impl RawTracker {
     }
 
     pub fn on_observed<F: Fn() + 'static>(&mut self, cb: F) {
-        self.observed_cb = Some(Box::new(cb));
+        self.observed_cb = Some(Arc::new(cb));
     }
 
     pub fn on_unobserved<F: Fn() + 'static>(&mut self, cb: F) {
-        self.unobserved_cb = Some(Box::new(cb));
+        self.unobserved_cb = Some(Arc::new(cb));
     }
 
     pub fn on_reaction<F: Fn() + 'static>(&mut self, cb: F) {
-        self.reaction_cb = Some(Box::new(cb));
+        self.reaction_cb = Some(Arc::new(cb));
     }
 
     pub fn set_computation<F: TrackerBody + 'static>(&mut self, cb: F) {
