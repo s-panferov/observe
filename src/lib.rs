@@ -1,6 +1,7 @@
 mod body;
 mod computed;
 mod context;
+mod maybe;
 mod reaction;
 mod tracker;
 mod transaction;
@@ -14,8 +15,9 @@ pub use observe_macro::*;
 
 pub use crate::computed::Computed;
 pub use crate::context::EvalContext;
+pub use crate::maybe::MaybeValue;
 pub use crate::reaction::{autorun, reaction, Autorun, Effect, Reaction};
-pub use crate::tracker::Tracker;
+pub use crate::tracker::{Tracker, WeakTracker};
 pub use crate::transaction::{transaction, Transaction};
 pub use crate::value::Value;
 pub use crate::variable::Var;

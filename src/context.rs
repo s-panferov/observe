@@ -37,6 +37,14 @@ impl EvalContext {
         }
     }
 
+    // TODO optimize empty case
+    pub fn empty() -> Self {
+        EvalContext {
+            prev_used: HashSet::new(),
+            using: HashSet::new(),
+        }
+    }
+
     pub fn access(&mut self, tracker: Tracker) {
         self.using.insert(tracker);
     }

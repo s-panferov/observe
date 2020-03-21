@@ -90,11 +90,4 @@ impl<T: Hash + Send + Sync + 'static> Computed<T> {
             handler(ctx, &value)
         })
     }
-
-    pub fn to_value(&self) -> Value<T> {
-        Value::Computed(Computed {
-            tracker: self.tracker.clone(),
-            _t: PhantomData,
-        })
-    }
 }
