@@ -1,4 +1,4 @@
-use observe::{Computed, Var};
+use observe::Value;
 
 use crate::suite::spy::{SharedMock, Spy};
 
@@ -6,8 +6,8 @@ use crate::suite::spy::{SharedMock, Spy};
 fn simple_computed() {
     let spy = SharedMock::new();
 
-    let value = Var::new(10);
-    let computed = Computed::new({
+    let value = Value::var(10);
+    let computed = Value::computed({
         let value = value.clone();
         let spy = spy.clone();
         move |ctx| {
@@ -34,12 +34,12 @@ fn simple_computed() {
 
 #[test]
 fn computed_chain() {
-    let value = Var::new(10);
+    let value = Value::var(10);
 
     let double_spy = SharedMock::new();
     let quadruple_spy = SharedMock::new();
 
-    let double = Computed::new({
+    let double = Value::computed({
         let value = value.clone();
         let double_spy = double_spy.clone();
         move |ctx| {
@@ -48,7 +48,7 @@ fn computed_chain() {
         }
     });
 
-    let quadruple = Computed::new({
+    let quadruple = Value::computed({
         let double = double.clone();
         let quadruple_spy = quadruple_spy.clone();
         move |ctx| {

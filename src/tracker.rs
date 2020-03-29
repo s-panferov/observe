@@ -1,17 +1,18 @@
-use core::any::Any;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::mem;
-use std::sync::{Arc, Weak};
+use std::rc::{Rc, Weak};
 
 use snowflake::ProcessUniqueId;
 
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::any::Any;
+use std::cell::RefCell;
 
-use crate::context::{EvalContext, TrackerBody};
+use crate::context::EvalContext;
+use crate::eval::{AnyValue, Evaluation};
 use crate::transaction::Transaction;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -29,7 +30,7 @@ pub enum Expired {
 #[derive(Debug, Clone)]
 pub struct Tracker {
     id: ProcessUniqueId,
-    body: Arc<RwLock<RawTracker>>,
+    body: Rc<RefCell<RawTracker>>,
 }
 
 impl PartialEq for Tracker {
@@ -51,38 +52,67 @@ impl Tracker {
         let body = RawTracker::new(name);
         let tracker = Tracker {
             id: body.id.clone(),
-            body: Arc::new(RwLock::new(body)),
+            body: Rc::new(RefCell::new(body)),
         };
 
-        tracker.get_mut().reference = Some(tracker.weak());
+        tracker.inner_mut().reference = Some(tracker.weak());
         tracker
     }
 
     pub fn weak(&self) -> WeakTracker {
         return WeakTracker {
             id: self.id.clone(),
-            body: Arc::downgrade(&self.body),
+            body: Rc::downgrade(&self.body),
         };
     }
 
-    pub fn get(&self) -> RwLockReadGuard<RawTracker> {
-        self.body.read().unwrap()
+    pub fn before_access(&self, ctx: Option<&mut EvalContext>) {
+        if ctx.is_some() {
+            ctx.unwrap().access(self.clone());
+        }
+        self.update()
     }
 
-    pub fn get_mut(&self) -> RwLockWriteGuard<RawTracker> {
-        self.body.write().unwrap()
+    pub fn get(&self, ctx: Option<&mut EvalContext>) -> Rc<dyn Any + 'static> {
+        self.before_access(ctx);
+        self.inner().body.get()
+    }
+
+    pub fn change<F>(&self, tx: Option<&mut Transaction>, closure: F)
+    where
+        F: FnOnce(&mut dyn Evaluation) -> u64,
+    {
+        let new_hash = closure(&mut *self.inner_mut().body);
+        self.inner_mut().update_hash(new_hash);
+        if let Some(tx) = tx {
+            tx.mark_changed(self.weak().clone());
+        } else {
+            self.notify_reactions()
+        }
+    }
+
+    pub fn set(&self, tx: Option<&mut Transaction>, value: AnyValue) {
+        self.change(tx, move |eval| eval.set(value))
+    }
+
+    pub fn update(&self) {
+        if self.inner().should_evaluate() {
+            self.inner_mut().evaluate()
+        }
     }
 
     pub fn notify_reactions(&self) {
-        if self.get().is_observer {
-            let this = self.get().reaction_cb.clone();
-            match this {
-                Some(cb) => cb(),
-                None => self.get_mut().update(),
+        if self.inner().body.is_observer() {
+            if self.inner().body.is_scheduled() {
+                self.inner_mut().body.on_reaction();
+            } else {
+                self.update()
             }
-        } else if self.get().is_observed() {
+        }
+
+        if self.inner().is_observed() {
             // We should have a reaction somewhere up
-            let used_by = self.get().used_by.clone();
+            let used_by = self.inner().used_by.clone();
             for tracker in used_by.into_iter() {
                 let tracker = tracker.upgrade();
                 if tracker.is_some() {
@@ -91,34 +121,54 @@ impl Tracker {
             }
         }
     }
+
+    pub fn state(&self) -> Freshness {
+        let inner = self.inner();
+        inner.state.clone()
+    }
+
+    pub fn set_computation(&self, cb: Box<dyn Evaluation>) {
+        self.inner_mut().body = cb;
+    }
+
+    fn inner(&self) -> std::cell::Ref<RawTracker> {
+        self.body.borrow()
+    }
+
+    fn inner_mut(&self) -> std::cell::RefMut<RawTracker> {
+        self.body.borrow_mut()
+    }
 }
 
 pub struct RawTracker {
     id: ProcessUniqueId,
     name: String,
     hash: u64,
-    // lock: Lock,
     used_by: HashSet<WeakTracker>,
     based_on: HashMap<Tracker, u64>,
     state: Freshness,
     observation_counter: i8,
-    is_observer: bool,
     reference: Option<WeakTracker>,
-    reaction_cb: Option<Arc<dyn Fn()>>,
-    observed_cb: Option<Arc<dyn Fn()>>,
-    unobserved_cb: Option<Arc<dyn Fn()>>,
-    body: Option<Box<dyn TrackerBody>>,
+    body: Box<dyn Evaluation>,
 }
 
 impl Drop for RawTracker {
     fn drop(&mut self) {
         for (tracker, _) in self.based_on.iter() {
-            let mut tracker_body = tracker.get_mut();
+            let mut tracker_body = tracker.inner_mut();
             tracker_body.report_not_more_used_by(self.weak_ref());
-            if self.is_observer {
+            if self.body.is_observer() {
                 tracker_body.dec_observers()
             }
         }
+    }
+}
+
+struct EmptyBody {}
+
+impl Evaluation for EmptyBody {
+    fn evaluate(&mut self, _: &mut EvalContext) -> u64 {
+        0
     }
 }
 
@@ -128,46 +178,17 @@ impl RawTracker {
             id: ProcessUniqueId::new(),
             name,
             hash: 0,
-            // lock: Lock::new(),
             used_by: HashSet::new(),
             based_on: HashMap::new(),
             state: Freshness::Expired(Expired::ForSure),
             reference: None,
-            is_observer: false,
             observation_counter: 0,
-            reaction_cb: None,
-            observed_cb: None,
-            unobserved_cb: None,
-            body: None,
+            body: Box::new(EmptyBody {}),
         }
     }
 
     pub fn weak_ref(&self) -> &WeakTracker {
         self.reference.as_ref().unwrap()
-    }
-
-    pub fn strong_ref(&self) -> Tracker {
-        self.weak_ref().upgrade().unwrap()
-    }
-
-    pub fn on_observed<F: Fn() + 'static>(&mut self, cb: F) {
-        self.observed_cb = Some(Arc::new(cb));
-    }
-
-    pub fn on_unobserved<F: Fn() + 'static>(&mut self, cb: F) {
-        self.unobserved_cb = Some(Arc::new(cb));
-    }
-
-    pub fn on_reaction<F: Fn() + 'static>(&mut self, cb: F) {
-        self.reaction_cb = Some(Arc::new(cb));
-    }
-
-    pub fn set_computation<F: TrackerBody + 'static>(&mut self, cb: F) {
-        self.body = Some(Box::new(cb));
-    }
-
-    pub fn set_is_observer(&mut self) {
-        self.is_observer = true;
     }
 
     fn report_used_by(&mut self, tracker: WeakTracker) {
@@ -182,17 +203,6 @@ impl RawTracker {
         self.observation_counter > 0
     }
 
-    pub fn based_on(&self) -> &HashMap<Tracker, u64> {
-        &self.based_on
-    }
-
-    pub fn report_changed(&mut self, tx: &mut Transaction) {
-        // try to grab a write lock to avoid concurrent updates
-        // self.lock.lock();
-        self.expire(Expired::ForSure);
-        tx.mark_changed(self.weak_ref().clone());
-    }
-
     pub fn should_evaluate(&self) -> bool {
         match self.state {
             Freshness::UpToDate => false,
@@ -200,10 +210,10 @@ impl RawTracker {
             Freshness::Expired(Expired::Maybe) => {
                 let mut changed = false;
                 for (tracker, hash) in self.based_on.iter() {
-                    if tracker.get().should_evaluate() {
-                        tracker.get_mut().evaluate();
+                    if tracker.inner().should_evaluate() {
+                        tracker.inner_mut().evaluate();
                     }
-                    if &tracker.get().hash != hash {
+                    if &tracker.inner().hash != hash {
                         changed = true;
                         break;
                     }
@@ -213,18 +223,7 @@ impl RawTracker {
         }
     }
 
-    pub fn update(&mut self) {
-        if self.should_evaluate() {
-            self.evaluate()
-        }
-    }
-
-    pub fn get(&self) -> Arc<dyn Any + Send + Sync> {
-        self.body.as_ref().unwrap().get()
-    }
-
-    pub fn set(&mut self, value: Arc<dyn Any + Send + Sync>) {
-        let new_hash = self.body.as_mut().unwrap().set(value);
+    pub fn update_hash(&mut self, new_hash: u64) {
         if self.hash != new_hash {
             self.hash = new_hash;
             self.expire(Expired::ForSure);
@@ -232,45 +231,34 @@ impl RawTracker {
     }
 
     pub fn evaluate(&mut self) {
-        let evaluate = self.body.as_mut();
+        let body = self.body.as_mut();
         let prev_used = mem::replace(&mut self.based_on, HashMap::new());
-        let ctx = match evaluate {
-            Some(ev) => {
-                let mut ctx = EvalContext::new(prev_used);
-                let hash = ev.evaluate(&mut ctx);
-                let using = HashMap::from_iter(ctx.using.iter().map(|t| {
-                    let version = t.get().hash;
-                    (t.clone(), version)
-                }));
+        let mut ctx = EvalContext::new(prev_used);
+        let hash = body.evaluate(&mut ctx);
+        let using = HashMap::from_iter(ctx.using.iter().map(|t| {
+            let version = t.inner().hash;
+            (t.clone(), version)
+        }));
 
-                self.hash = hash;
-                self.based_on = using;
-                ctx
-            }
-            None => EvalContext::new(HashMap::new()),
-        };
-
+        self.hash = hash;
+        self.based_on = using;
         self.state = Freshness::UpToDate;
 
         for based_on in ctx.diff_added() {
-            let mut based_on = based_on.get_mut();
+            let mut based_on = based_on.inner_mut();
             based_on.report_used_by(self.weak_ref().clone());
-            if self.is_observer {
+            if self.body.is_observer() {
                 based_on.inc_observers()
             }
         }
 
         for based_on in ctx.diff_removed() {
-            let mut based_on = based_on.get_mut();
+            let mut based_on = based_on.inner_mut();
             based_on.report_not_more_used_by(self.weak_ref());
-            if self.is_observer {
+            if self.body.is_observer() {
                 based_on.dec_observers()
             }
         }
-    }
-
-    pub fn id(&self) -> &ProcessUniqueId {
-        &self.id
     }
 
     /// Called by Reactions
@@ -279,15 +267,9 @@ impl RawTracker {
 
         //become observable
         if self.observation_counter == 1 {
-            {
-                let observed_cb = self.observed_cb.as_ref();
-                if observed_cb.is_some() {
-                    observed_cb.unwrap()();
-                };
-            }
-
+            self.body.on_become_observed();
             for (tracker, _) in &mut self.based_on.iter() {
-                tracker.get_mut().inc_observers()
+                tracker.inner_mut().inc_observers()
             }
         }
     }
@@ -303,15 +285,9 @@ impl RawTracker {
 
         //become unobservable
         if self.observation_counter == 0 {
-            {
-                let unobserved_cb = self.unobserved_cb.as_ref();
-                if unobserved_cb.is_some() {
-                    unobserved_cb.unwrap()();
-                };
-            }
-
+            self.body.on_become_unobserved();
             for (tracker, _) in &mut self.based_on.iter() {
-                tracker.get_mut().dec_observers()
+                tracker.inner_mut().dec_observers()
             }
         }
     }
@@ -327,13 +303,9 @@ impl RawTracker {
         for derived in &mut self.used_by.iter() {
             let derived = derived.upgrade();
             if derived.is_some() {
-                derived.unwrap().get_mut().expire(Expired::Maybe)
+                derived.unwrap().inner_mut().expire(Expired::Maybe)
             }
         }
-    }
-
-    pub fn state(&self) -> &Freshness {
-        &self.state
     }
 }
 
@@ -360,7 +332,7 @@ impl Eq for RawTracker {}
 #[derive(Debug)]
 pub struct WeakTracker {
     id: ProcessUniqueId,
-    body: Weak<RwLock<RawTracker>>,
+    body: Weak<RefCell<RawTracker>>,
 }
 
 impl WeakTracker {
@@ -406,21 +378,21 @@ mod tests {
     fn call_computation_on_update() {
         let tracker = Tracker::new("Test".to_owned());
         let spy = SharedMock::new();
-        tracker.get_mut().set_computation({
+        tracker.set_computation(Box::new({
             let mock = spy.clone();
             move |_: &mut _| {
                 mock.get().trigger();
                 0
             }
-        });
+        }));
 
         spy.get().expect_trigger().return_const(()).times(1);
-        tracker.get_mut().update();
+        tracker.update();
 
         spy.get().checkpoint();
 
         spy.get().expect_trigger().return_const(()).times(0);
-        tracker.get_mut().update();
+        tracker.update();
     }
 
     #[test]
@@ -429,48 +401,48 @@ mod tests {
         let b = Tracker::new("B".to_owned());
         let c = Tracker::new("C".to_owned());
 
-        a.get_mut().set_computation({
+        a.set_computation({
             let b = b.clone();
-            move |ctx: &mut EvalContext| {
-                b.get_mut().update();
+            Box::new(move |ctx: &mut EvalContext| {
+                b.update();
                 ctx.access(b.clone());
                 0
-            }
+            })
         });
 
-        b.get_mut().set_computation({
+        b.set_computation({
             let c = c.clone();
-            move |ctx: &mut EvalContext| {
-                c.get_mut().update();
+            Box::new(move |ctx: &mut EvalContext| {
+                c.update();
                 ctx.access(c.clone());
                 0
-            }
+            })
         });
 
-        a.get_mut().update();
+        a.update();
 
-        assert_eq!(a.get().based_on.len(), 1);
-        assert_eq!(b.get().based_on.len(), 1);
-        assert_eq!(c.get().based_on.len(), 0);
+        assert_eq!(a.inner().based_on.len(), 1);
+        assert_eq!(b.inner().based_on.len(), 1);
+        assert_eq!(c.inner().based_on.len(), 0);
 
-        assert_eq!(c.get().used_by.len(), 1);
-        assert_eq!(b.get().used_by.len(), 1);
-        assert_eq!(a.get().used_by.len(), 0);
+        assert_eq!(c.inner().used_by.len(), 1);
+        assert_eq!(b.inner().used_by.len(), 1);
+        assert_eq!(a.inner().used_by.len(), 0);
 
-        assert_eq!(c.get().state, Freshness::UpToDate);
-        assert_eq!(c.get().state, Freshness::UpToDate);
-        assert_eq!(c.get().state, Freshness::UpToDate);
+        assert_eq!(c.inner().state, Freshness::UpToDate);
+        assert_eq!(c.inner().state, Freshness::UpToDate);
+        assert_eq!(c.inner().state, Freshness::UpToDate);
 
-        c.get_mut().expire(Expired::ForSure);
+        c.inner_mut().expire(Expired::ForSure);
 
-        assert_eq!(a.get().state, Freshness::Expired(Expired::Maybe));
-        assert_eq!(b.get().state, Freshness::Expired(Expired::Maybe));
-        assert_eq!(c.get().state, Freshness::Expired(Expired::ForSure));
+        assert_eq!(a.inner().state, Freshness::Expired(Expired::Maybe));
+        assert_eq!(b.inner().state, Freshness::Expired(Expired::Maybe));
+        assert_eq!(c.inner().state, Freshness::Expired(Expired::ForSure));
 
-        a.get_mut().update();
+        a.update();
 
-        assert_eq!(c.get().state, Freshness::UpToDate);
-        assert_eq!(c.get().state, Freshness::UpToDate);
-        assert_eq!(c.get().state, Freshness::UpToDate);
+        assert_eq!(c.inner().state, Freshness::UpToDate);
+        assert_eq!(c.inner().state, Freshness::UpToDate);
+        assert_eq!(c.inner().state, Freshness::UpToDate);
     }
 }

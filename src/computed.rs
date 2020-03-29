@@ -1,93 +1,95 @@
-use crate::value::Value;
-use std::hash::Hash;
-use std::{marker::PhantomData, sync::Arc};
+use std::{hash::Hash, ops::Deref, rc::Rc};
 
 use crate::context::EvalContext;
-use crate::{body::ComputedBody, tracker::Tracker};
+use crate::{
+    eval::{AnyValue, Evaluation},
+    variable::Variable,
+    Tracker, Value,
+};
 
-#[derive(Debug)]
-pub struct Computed<T: Hash + Send + Sync> {
-    tracker: Tracker,
-    _t: PhantomData<T>,
+pub struct Computed<T: Hash> {
+    value: Value<T>,
 }
 
-impl<T: Hash + Send + Sync> Clone for Computed<T> {
-    fn clone(&self) -> Computed<T> {
-        Computed {
-            tracker: self.tracker.clone(),
-            _t: PhantomData,
-        }
+impl<T: Hash> Deref for Computed<T> {
+    type Target = Value<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.value
     }
 }
 
-impl<T: Hash + Send + Sync + 'static> std::default::Default for Computed<T> {
+impl<T: Hash> From<Computed<T>> for Value<T> {
+    fn from(from: Computed<T>) -> Value<T> {
+        from.value.clone()
+    }
+}
+
+impl<T: Hash + 'static> Default for Computed<T> {
     fn default() -> Self {
-        Computed::<T>::init()
+        Computed::empty()
     }
 }
 
-impl<T: Hash + Send + Sync + 'static> Computed<T> {
-    pub fn new<F: Fn(&mut EvalContext) -> T + 'static>(handler: F) -> Self {
-        let tracker = Tracker::new("Computed".to_owned());
-        {
-            let mut mut_tracker = tracker.get_mut();
-            mut_tracker.set_computation(ComputedBody::new(None, handler));
-        }
-        Computed {
-            tracker,
-            _t: PhantomData,
-        }
-    }
-
-    fn init() -> Self {
-        let tracker = Tracker::new("Computed".to_owned());
-        Computed {
-            tracker,
-            _t: PhantomData,
-        }
-    }
-
-    pub fn set_handler<F: Fn(&mut EvalContext) -> T + 'static>(&self, handler: F) {
-        {
-            let mut mut_tracker = self.tracker.get_mut();
-            mut_tracker.set_computation(ComputedBody::new(None, handler));
-        }
-    }
-
-    fn get(&self, ctx: Option<&mut EvalContext>) -> Arc<T> {
-        if ctx.is_some() {
-            ctx.unwrap().access(self.tracker.clone());
-        }
-
-        if self.tracker.get().should_evaluate() {
-            self.tracker.get_mut().evaluate();
-        }
-
-        let tracker = self.tracker.get();
-        tracker.get().downcast::<T>().unwrap()
-    }
-
-    pub fn observe(&self, ctx: &mut EvalContext) -> Arc<T> {
-        self.get(Some(ctx))
-    }
-
-    pub fn once(&self) -> Arc<T> {
-        self.get(None)
-    }
-
-    pub fn map<R, F>(&self, handler: F) -> Computed<R>
+impl<T: Hash + 'static> Computed<T> {
+    pub fn new<F>(handler: F) -> Computed<T>
     where
-        F: Fn(&mut EvalContext, &T) -> R + 'static,
-        R: Hash + Send + Sync + 'static,
+        F: Fn(&mut EvalContext) -> T + 'static,
     {
-        let this = Computed {
-            tracker: self.tracker.clone(),
-            _t: PhantomData,
-        };
+        let computed = Computed::empty();
+        computed.set_handler(handler);
+        computed
+    }
 
-        Computed::new(move |ctx| {
-            let value = this.observe(ctx);
-            handler(ctx, &value)
-        })
+    pub fn empty() -> Computed<T> {
+        let tracker = Tracker::new("Computed".to_owned());
+        Computed {
+            value: Value::Dynamic { tracker },
+        }
+    }
+
+    pub fn set_handler<F>(&self, handler: F)
+    where
+        F: Fn(&mut EvalContext) -> T + 'static,
+    {
+        self.set_computation(Box::new(ComputedEngine::new(None, handler, false)));
+    }
+}
+
+pub struct ComputedEngine<T: Hash, F: Fn(&mut EvalContext) -> T> {
+    is_observer: bool,
+    current: Option<Rc<T>>,
+    func: F,
+}
+
+impl<T: Hash, F: Fn(&mut EvalContext) -> T> ComputedEngine<T, F> {
+    pub fn new(value: Option<T>, func: F, is_observer: bool) -> Self {
+        ComputedEngine {
+            is_observer,
+            current: value.map(Rc::new),
+            func,
+        }
+    }
+}
+
+impl<T: Hash + 'static, F: Fn(&mut EvalContext) -> T + 'static> Evaluation
+    for ComputedEngine<T, F>
+{
+    fn evaluate(&mut self, ctx: &mut EvalContext) -> u64 {
+        let next = (self.func)(ctx);
+        let hash = Variable::hash(&next);
+        self.current.replace(Rc::new(next));
+        hash
+    }
+
+    fn is_observer(&self) -> bool {
+        self.is_observer
+    }
+
+    /// Get the current value
+    ///
+    /// Returns "next" value inside the transaction or
+    /// the "current" value outsize.
+    fn get(&self) -> AnyValue {
+        self.current.as_ref().unwrap().clone()
     }
 }

@@ -1,24 +1,21 @@
 use mockall::predicate::*;
 
-use observe::{autorun, transaction, Var};
+use observe::{transaction, Value};
 
 use crate::suite::spy::{SharedMock, Spy};
 
 #[test]
 fn check_autorun() {
     let spy = SharedMock::new();
-    let value = Var::new(10);
+    let value = Value::var(10);
 
-    let reaction = autorun(
-        {
-            let value = value.clone();
-            let spy = spy.clone();
-            move |ctx| {
-                spy.get().u32(*value.observe(ctx));
-            }
-        },
-        None,
-    );
+    let reaction = Value::autorun({
+        let value = value.clone();
+        let spy = spy.clone();
+        move |ctx| {
+            spy.get().u32(*value.observe(ctx));
+        }
+    });
 
     spy.get()
         .expect_u32()
@@ -26,7 +23,7 @@ fn check_autorun() {
         .return_const(())
         .times(1);
 
-    reaction.run();
+    reaction.update();
 
     spy.get().checkpoint();
 
@@ -62,9 +59,9 @@ fn check_autorun() {
         // inner transaction should NOT fire reactions
         transaction(Some(tx), |tx| {
             // this section would trigger reactions three times without transaction
-            value.set(20, tx);
-            value.set(30, tx);
-            value.set(40, tx);
+            value.set(tx, 20);
+            value.set(tx, 30);
+            value.set(tx, 40);
         });
 
         spy.get().checkpoint();

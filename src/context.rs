@@ -1,27 +1,7 @@
-use core::any::Any;
 use std::collections::{HashMap, HashSet};
-use std::{iter::FromIterator, sync::Arc};
+use std::iter::FromIterator;
 
 use crate::tracker::Tracker;
-
-pub trait TrackerBody {
-    fn evaluate(&mut self, ctx: &mut EvalContext) -> u64;
-    fn get(&self) -> Arc<dyn Any + Send + Sync> {
-        unimplemented!();
-    }
-    fn set(&mut self, _value: Arc<dyn Any + Send + Sync>) -> u64 {
-        unimplemented!();
-    }
-}
-
-impl<T> TrackerBody for T
-where
-    T: FnMut(&mut EvalContext) -> u64,
-{
-    fn evaluate(&mut self, ctx: &mut EvalContext) -> u64 {
-        self(ctx)
-    }
-}
 
 pub struct EvalContext {
     pub(crate) prev_used: HashSet<Tracker>,
@@ -45,15 +25,15 @@ impl EvalContext {
         }
     }
 
-    pub fn access(&mut self, tracker: Tracker) {
+    pub(crate) fn access(&mut self, tracker: Tracker) {
         self.using.insert(tracker);
     }
 
-    pub fn diff_added(&self) -> impl Iterator<Item = &Tracker> {
+    pub(crate) fn diff_added(&self) -> impl Iterator<Item = &Tracker> {
         self.using.difference(&self.prev_used)
     }
 
-    pub fn diff_removed(&self) -> impl Iterator<Item = &Tracker> {
+    pub(crate) fn diff_removed(&self) -> impl Iterator<Item = &Tracker> {
         self.prev_used.difference(&self.using)
     }
 

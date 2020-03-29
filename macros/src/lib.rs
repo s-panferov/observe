@@ -1,20 +1,23 @@
 extern crate proc_macro;
 
+use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::quote;
 
-#[proc_macro_derive(Observe, attributes(computed, reaction, autorun))]
+#[proc_macro_derive(
+    Observe,
+    attributes(computed, reaction, autorun, fut_autorun, fut_reaction)
+)]
 pub fn observe_derive(_original: TokenStream) -> TokenStream {
-    // let original = syn::parse_macro_input!(original as syn::ItemStruct);
     TokenStream::new()
 }
+
+#[derive(Default, FromMeta)]
+struct FutureAttr {}
 
 #[proc_macro_attribute]
 pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
     let mut original = syn::parse_macro_input!(original as syn::ItemStruct);
-    // let derive = "#[derive(observe::Observe)]".parse().unwrap();
-    // let parser = syn::parse_str("#[derive(observe::Observe)]").unwrap();
-    // let derive = syn::Attribute::parse_outer(parser);
 
     original
         .attrs
@@ -23,32 +26,38 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
     let name = original.ident.clone();
     let mut computed = vec![];
     let mut reaction = vec![];
+    let mut future = vec![];
     for f in &original.fields {
-        match &f.ty {
-            syn::Type::Path(path) => {
-                for seg in &path.path.segments {
-                    if seg.ident.to_string() == "Computed" {
-                        match &f.ident {
-                            Some(ident) => computed.push(ident.clone()),
-                            None => {}
-                        }
-                    } else if seg.ident.to_string() == "Reaction" {
-                        match &f.ident {
-                            Some(ident) => reaction.push(ident.clone()),
-                            None => {}
-                        }
-                    }
+        for a in &f.attrs {
+            if a.path.get_ident().map(|i| i.to_string()) == Some(String::from("computed")) {
+                match &f.ident {
+                    Some(ident) => computed.push(ident.clone()),
+                    None => {}
                 }
             }
-            _ => {}
-        };
+            if a.path.get_ident().map(|i| i.to_string()) == Some(String::from("autorun")) {
+                match &f.ident {
+                    Some(ident) => reaction.push(ident.clone()),
+                    None => {}
+                }
+            }
+            if a.path.get_ident().map(|i| i.to_string()) == Some(String::from("fut_autorun")) {
+                let args = a.tokens.clone().into();
+                let attr_args = syn::parse_macro_input!(args as syn::AttributeArgs);
+                let _args = FutureAttr::from_list(&attr_args);
+                match &f.ident {
+                    Some(ident) => future.push(ident.clone()),
+                    None => {}
+                }
+            }
+        }
     }
 
     let computed = computed.iter().map(|c| {
         // let get = format_ident!("get_{}", c);
-        quote! {
-          self.#c.set_handler({
-            let this = Arc::downgrade(&self);
+        quote! {{
+          let this = std::rc::Rc::downgrade(&self);
+          self.#c.become_computed({
             move |ctx| {
               let arc = this.upgrade();
               match arc {
@@ -61,14 +70,36 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
               }
             }
           });
-        }
+        }}
     });
 
     let reaction = reaction.iter().map(|r| {
         // let get = format_ident!("get_{}", c);
-        quote! {
-          self.#r.set_handler(observe::Autorun::new({
-            let this = Arc::downgrade(&self);
+        quote! {{
+          let this = std::rc::Rc::downgrade(&self);
+          self.#r.become_autorun({
+            move |ctx| {
+              let arc = this.upgrade();
+              match arc {
+                Some(store) => {
+                  store.#r(ctx)
+                },
+                None => {
+                  panic!("Call on a dropped store")
+                }
+              }
+            }
+          });
+
+          self.#r.update();
+        }}
+    });
+
+    let future = future.iter().map(|r| {
+        // let get = format_ident!("get_{}", c);
+        quote! {{
+          let this = std::rc::Rc::downgrade(&self);
+          self.#r.become_fut_autorun(Box::new({
             move |ctx| {
               let arc = this.upgrade();
               match arc {
@@ -82,8 +113,8 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
             }
           }));
 
-          self.#r.run();
-        }
+          self.#r.update();
+        }}
     });
 
     let (impl_generics, ty_generics, where_clause) = original.generics.split_for_impl();
@@ -91,9 +122,10 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
     let output = quote! {
       #original
       impl #impl_generics #name #ty_generics #where_clause {
-        fn __init_observables(self: &Arc<Self>) {
+        fn __init_observables(self: &std::rc::Rc<Self>) {
           #(#computed)*
           #(#reaction)*
+          #(#future)*
         }
       }
     };

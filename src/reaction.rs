@@ -1,107 +1,63 @@
-use crate::context::{EvalContext, TrackerBody};
-use crate::tracker::Tracker;
+use crate::context::EvalContext;
+use crate::{
+    eval::{AnyValue, Evaluation},
+    variable::Variable,
+};
 
-use std::fmt;
-use std::mem;
+use std::{hash::Hash, mem, rc::Rc};
 
-#[derive(Clone)]
-pub struct Reaction {
-    tracker: Tracker,
-}
-
-impl fmt::Debug for Reaction {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Reaction[tracker: {:?}]", self.tracker)
-    }
-}
-
-impl std::default::Default for Reaction {
-    fn default() -> Self {
-        Reaction::init("Reaction")
-    }
-}
-
-impl Reaction {
-    fn new<E: TrackerBody + 'static>(eval: E, name: Option<String>) -> Self {
-        let tracker = Tracker::new(name.unwrap_or("Reaction".to_string()));
-        let mut tr = tracker.get_mut();
-        tr.set_computation(eval);
-        tr.set_is_observer();
-        std::mem::drop(tr);
-
-        Reaction { tracker }
-    }
-
-    fn init<T: Into<String>>(name: T) -> Self {
-        let tracker = Tracker::new(name.into());
-        let mut tr = tracker.get_mut();
-        tr.set_is_observer();
-        std::mem::drop(tr);
-        Reaction { tracker }
-    }
-
-    pub fn set_handler<E: TrackerBody + 'static>(&self, handler: E) {
-        self.tracker.get_mut().set_computation(handler);
-    }
-
-    pub fn run(&self) {
-        self.tracker.get_mut().update();
-    }
-}
-
-pub struct Autorun<F: Fn(&mut EvalContext)> {
-    handler: F,
-}
-
-impl<F: Fn(&mut EvalContext)> Autorun<F> {
-    pub fn new(handler: F) -> Self {
-        Autorun { handler }
-    }
-}
-
-impl<F: Fn(&mut EvalContext)> TrackerBody for Autorun<F> {
-    fn evaluate(&mut self, context: &mut EvalContext) -> u64 {
-        (self.handler)(context);
-        return 0;
-    }
-}
-
-pub struct Effect<T: Eq, Expr: Fn(&mut EvalContext) -> T, Eff: Fn(&mut T)> {
+pub struct Effect<T: Eq, R: Hash + 'static, Expr: Fn(&mut EvalContext) -> T, Eff: Fn(&mut T) -> R> {
     expr: Expr,
     eff: Eff,
+    hash: u64,
     cached: Option<T>,
+    current: Option<Rc<R>>,
 }
 
-impl<T: Eq, Expr: Fn(&mut EvalContext) -> T, Eff: Fn(&mut T)> TrackerBody for Effect<T, Expr, Eff> {
-    fn evaluate(&mut self, context: &mut EvalContext) -> u64 {
-        let mut value = (self.expr)(context);
-        if self.cached.as_ref() != Some(&value) {
-            (self.eff)(&mut value);
-            let _old = mem::replace(&mut self.cached, Some(value));
-        }
-        0
-    }
-}
-
-pub fn autorun<F: Fn(&mut EvalContext) + 'static>(func: F, name: Option<String>) -> Reaction {
-    Reaction::new(Autorun { handler: func }, name)
-}
-
-pub fn reaction<
-    T: Eq + 'static,
-    Expr: Fn(&mut EvalContext) -> T + 'static,
-    Eff: Fn(&mut T) + 'static,
->(
-    expr: Expr,
-    eff: Eff,
-    name: Option<String>,
-) -> Reaction {
-    Reaction::new(
+impl<T, R, Expr, Eff> Effect<T, R, Expr, Eff>
+where
+    T: Eq,
+    R: Hash + 'static,
+    Expr: Fn(&mut EvalContext) -> T,
+    Eff: Fn(&mut T) -> R,
+{
+    pub fn new(expr: Expr, eff: Eff) -> Self {
         Effect {
             expr,
             eff,
+            hash: 0,
             cached: None,
-        },
-        name,
-    )
+            current: None,
+        }
+    }
+}
+
+impl<T, R, Expr, Eff> Evaluation for Effect<T, R, Expr, Eff>
+where
+    T: Eq + 'static,
+    R: Hash + 'static,
+    Expr: Fn(&mut EvalContext) -> T + 'static,
+    Eff: Fn(&mut T) -> R + 'static,
+{
+    fn evaluate(&mut self, context: &mut EvalContext) -> u64 {
+        let mut value: T = (self.expr)(context);
+        if self.cached.as_ref() != Some(&value) {
+            let res = (self.eff)(&mut value);
+            let _old = mem::replace(&mut self.cached, Some(value));
+            let hash = Variable::hash(&res);
+            if self.hash != hash {
+                self.hash = hash;
+                let _old = mem::replace(&mut self.current, Some(Rc::new(res)));
+            }
+        }
+        self.hash
+    }
+
+    fn get(&self) -> AnyValue {
+        self.current.as_ref().unwrap().clone()
+    }
+
+    fn is_observer(&self) -> bool {
+        true
+    }
 }

@@ -7,6 +7,12 @@ edition = "2018"
 [dependencies]
 snowflake = "1.3.0"
 observe_macro = {path="./macros"}
+tokio = { version = "^0.2", optional = true, features=["rt-core", "rt-util"] }
+futures = { version = "^0.3", optional = true }
+
+[features]
+default = ["tokio-0"]
+tokio-0 = ["tokio", "futures"]
 
 [dev-dependencies]
 mockall="*"
