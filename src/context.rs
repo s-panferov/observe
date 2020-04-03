@@ -1,15 +1,21 @@
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 
-use crate::tracker::Tracker;
+use crate::tracker::{Tracker, TrackerImpl};
 
-pub struct EvalContext {
-    pub(crate) prev_used: HashSet<Tracker>,
-    pub(crate) using: HashSet<Tracker>,
+pub struct EvalContext<Impl>
+where
+    Impl: TrackerImpl,
+{
+    pub(crate) prev_used: HashSet<Tracker<Impl>>,
+    pub(crate) using: HashSet<Tracker<Impl>>,
 }
 
-impl EvalContext {
-    pub fn new(prev_used: HashMap<Tracker, u64>) -> Self {
+impl<Impl> EvalContext<Impl>
+where
+    Impl: TrackerImpl,
+{
+    pub fn new(prev_used: HashMap<Tracker<Impl>, u64>) -> Self {
         let prev_used = HashSet::from_iter(prev_used.keys().cloned());
         EvalContext {
             prev_used,
@@ -25,19 +31,19 @@ impl EvalContext {
         }
     }
 
-    pub(crate) fn access(&mut self, tracker: Tracker) {
+    pub(crate) fn access(&mut self, tracker: Tracker<Impl>) {
         self.using.insert(tracker);
     }
 
-    pub(crate) fn diff_added(&self) -> impl Iterator<Item = &Tracker> {
+    pub(crate) fn diff_added(&self) -> impl Iterator<Item = &Tracker<Impl>> {
         self.using.difference(&self.prev_used)
     }
 
-    pub(crate) fn diff_removed(&self) -> impl Iterator<Item = &Tracker> {
+    pub(crate) fn diff_removed(&self) -> impl Iterator<Item = &Tracker<Impl>> {
         self.prev_used.difference(&self.using)
     }
 
-    pub fn into_used(self) -> HashSet<Tracker> {
+    pub fn into_used(self) -> HashSet<Tracker<Impl>> {
         self.using
     }
 }

@@ -1,4 +1,4 @@
-use observe::Value;
+use observe::{Computed, Shared, Value, Var};
 
 use crate::suite::spy::{SharedMock, Spy};
 
@@ -6,8 +6,8 @@ use crate::suite::spy::{SharedMock, Spy};
 fn simple_computed() {
     let spy = SharedMock::new();
 
-    let value = Value::var(10);
-    let computed = Value::computed({
+    let value = Value::<_, Shared>::from(Var::new(10));
+    let computed = Value::from(Computed::new({
         let value = value.clone();
         let spy = spy.clone();
         move |ctx| {
@@ -15,7 +15,7 @@ fn simple_computed() {
             let i = *value.observe(ctx);
             i * 2
         }
-    });
+    }));
 
     spy.get().expect_trigger().return_const(()).times(1);
 
@@ -34,28 +34,28 @@ fn simple_computed() {
 
 #[test]
 fn computed_chain() {
-    let value = Value::var(10);
+    let value = Value::<_, Shared>::from(Var::new(10));
 
     let double_spy = SharedMock::new();
     let quadruple_spy = SharedMock::new();
 
-    let double = Value::computed({
+    let double = Value::from(Computed::new({
         let value = value.clone();
         let double_spy = double_spy.clone();
         move |ctx| {
             double_spy.get().trigger();
             *value.observe(ctx) * 2
         }
-    });
+    }));
 
-    let quadruple = Value::computed({
+    let quadruple = Value::from(Computed::new({
         let double = double.clone();
         let quadruple_spy = quadruple_spy.clone();
         move |ctx| {
             quadruple_spy.get().trigger();
             *double.observe(ctx) * 2
         }
-    });
+    }));
 
     double_spy.get().expect_trigger().return_const(()).times(0);
     quadruple_spy

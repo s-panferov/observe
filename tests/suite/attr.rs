@@ -1,36 +1,40 @@
 use observe::transaction;
-use observe::EvalContext;
-use observe::Transaction;
-use observe::{Computed, Value};
-use std::{fmt::Debug, hash::Hash, ops::Mul, rc::Rc};
+use observe::{
+    shared::{EvalContext, Transaction, Value},
+    Var,
+};
 
-#[observe::store]
-struct Store<T: Mul + Hash + Debug + Clone + 'static>
+use futures::Future;
+use std::{fmt::Debug, hash::Hash, ops::Mul, sync::Arc, task::Poll};
+
+#[observe::store(shared)]
+struct Store<T: Mul + Hash + Debug + Send + Sync + Clone + 'static>
 where
-    <T as std::ops::Mul>::Output: Hash + Debug + Clone + 'static,
+    <T as std::ops::Mul>::Output: Hash + Debug + Send + Sync + Clone + 'static,
 {
     pub value: Value<T>,
 
     #[computed]
-    pub computed: Computed<<T as std::ops::Mul>::Output>,
+    pub computed: Value<<T as std::ops::Mul>::Output>,
 
     #[autorun]
     pub reaction: Value<()>,
-    // #[fut_autorun]
-    // pub data: Value<Payload<u64>>,
+
+    #[autorun(future = "tokio")]
+    pub data: Value<Poll<u64>>,
 }
 
-impl<T: Mul + Hash + Debug + Clone + 'static> Store<T>
+impl<T: Mul + Hash + Debug + Clone + Send + Sync + 'static> Store<T>
 where
-    <T as std::ops::Mul>::Output: Hash + Debug + Clone + 'static,
+    <T as std::ops::Mul>::Output: Hash + Debug + Send + Sync + Clone + 'static,
 {
-    #[observe::create]
-    pub fn new(value: T) -> Rc<Self> {
-        Rc::new(Store {
-            value: Value::var(value),
-            computed: Computed::init(),
-            reaction: Value::init(),
-            // data: Value::init(),
+    #[observe::constructor]
+    pub fn new(value: T) -> Arc<Self> {
+        Arc::new(Store {
+            value: Value::from(Var::new(value)),
+            computed: Value::uninit(),
+            reaction: Value::uninit(),
+            data: Value::uninit(),
         })
     }
 
@@ -42,8 +46,8 @@ where
         println!("REACTION {:?}", *self.computed.observe(ctx))
     }
 
-    async fn data(&self, _ctx: &mut EvalContext) -> u64 {
-        futures::future::ready(10).await
+    fn data(&self, _ctx: &mut EvalContext) -> impl Future<Output = u64> {
+        futures::future::ready(10)
     }
 
     pub fn action(&self, tx: &mut Transaction, value: T) {

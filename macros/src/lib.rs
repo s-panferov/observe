@@ -4,20 +4,35 @@ use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::quote;
 
-#[proc_macro_derive(
-    Observe,
-    attributes(computed, reaction, autorun, fut_autorun, fut_reaction)
-)]
+#[proc_macro_derive(Observe, attributes(computed, reaction, autorun))]
 pub fn observe_derive(_original: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
 #[derive(Default, FromMeta)]
-struct FutureAttr {}
+struct StoreAttr {
+    #[darling(default)]
+    shared: bool,
+}
+
+#[derive(Default, FromMeta)]
+struct AutorunAttr {
+    #[darling(default)]
+    future: Option<Runtime>,
+}
+
+#[derive(FromMeta, PartialEq, Eq, Debug)]
+enum Runtime {
+    Tokio,
+    Wasm,
+}
 
 #[proc_macro_attribute]
-pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
+pub fn store(args: TokenStream, original: TokenStream) -> TokenStream {
     let mut original = syn::parse_macro_input!(original as syn::ItemStruct);
+
+    let store_args =
+        StoreAttr::from_list(&syn::parse_macro_input!(args as syn::AttributeArgs)).unwrap();
 
     original
         .attrs
@@ -35,30 +50,43 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
                     None => {}
                 }
             }
+
             if a.path.get_ident().map(|i| i.to_string()) == Some(String::from("autorun")) {
+                let args = a.parse_args::<proc_macro2::TokenStream>();
+                let args = if args.is_ok() {
+                    let args = args.unwrap().into();
+                    let args = syn::parse_macro_input!(args as syn::AttributeArgs);
+                    AutorunAttr::from_list(&args).unwrap()
+                } else {
+                    AutorunAttr::default()
+                };
+
                 match &f.ident {
-                    Some(ident) => reaction.push(ident.clone()),
-                    None => {}
-                }
-            }
-            if a.path.get_ident().map(|i| i.to_string()) == Some(String::from("fut_autorun")) {
-                let args = a.tokens.clone().into();
-                let attr_args = syn::parse_macro_input!(args as syn::AttributeArgs);
-                let _args = FutureAttr::from_list(&attr_args);
-                match &f.ident {
-                    Some(ident) => future.push(ident.clone()),
+                    Some(ident) => {
+                        if args.future.is_some() {
+                            future.push((ident.clone(), args.future.unwrap()))
+                        } else {
+                            reaction.push(ident.clone())
+                        }
+                    }
                     None => {}
                 }
             }
         }
     }
 
+    let pointer = if store_args.shared {
+        quote! {std::sync::Arc}
+    } else {
+        quote! {std::rc::Rc}
+    };
+
     let computed = computed.iter().map(|c| {
         // let get = format_ident!("get_{}", c);
         quote! {{
-          let this = std::rc::Rc::downgrade(&self);
-          self.#c.become_computed({
-            move |ctx| {
+          let this = #pointer::downgrade(&self);
+          self.#c.set_computation(Box::new({
+            observe::Computed::new(move |ctx| {
               let arc = this.upgrade();
               match arc {
                 Some(store) => {
@@ -68,17 +96,17 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
                   panic!("Call on a dropped store")
                 }
               }
-            }
-          });
+            })
+          }));
         }}
     });
 
     let reaction = reaction.iter().map(|r| {
         // let get = format_ident!("get_{}", c);
         quote! {{
-          let this = std::rc::Rc::downgrade(&self);
-          self.#r.become_autorun({
-            move |ctx| {
+          let this = #pointer::downgrade(&self);
+          self.#r.set_computation(Box::new({
+            observe::Computed::new(move |ctx| {
               let arc = this.upgrade();
               match arc {
                 Some(store) => {
@@ -88,32 +116,36 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
                   panic!("Call on a dropped store")
                 }
               }
-            }
-          });
+            })
+          }));
 
+          self.#r.autorun();
           self.#r.update();
         }}
     });
 
-    let future = future.iter().map(|r| {
+    let future = future.iter().map(|(r, runtime)| {
         // let get = format_ident!("get_{}", c);
+        let runtime = match runtime {
+            Runtime::Tokio => quote!{observe::future::TokioRuntime},
+            Runtime::Wasm => quote!{observe::future::WasmRuntime},
+        };
         quote! {{
-          let this = std::rc::Rc::downgrade(&self);
-          self.#r.become_fut_autorun(Box::new({
-            move |ctx| {
-              let arc = this.upgrade();
-              match arc {
-                Some(store) => {
-                  store.#r(ctx)
-                },
-                None => {
-                  panic!("Call on a dropped store")
-                }
+          let this = #pointer::downgrade(&self);
+          let tracker = self.#r.tracker().unwrap().weak();
+          let mut future = observe::future::ComputedFuture::<_,#runtime, _, _>::new(move |ctx: &mut observe::EvalContext<_>| {
+            let arc = this.upgrade();
+            match arc {
+              Some(store) => {
+                store.#r(ctx)
+              },
+              None => {
+                panic!("Call on a dropped store")
               }
             }
-          }));
-
-          self.#r.update();
+          });
+          future.set_tracker(tracker);
+          self.#r.set_computation(Box::new(future));
         }}
     });
 
@@ -122,7 +154,7 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
     let output = quote! {
       #original
       impl #impl_generics #name #ty_generics #where_clause {
-        fn __init_observables(self: &std::rc::Rc<Self>) {
+        fn __init_observables(self: &#pointer<Self>) {
           #(#computed)*
           #(#reaction)*
           #(#future)*
@@ -134,7 +166,7 @@ pub fn store(_args: TokenStream, original: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn create(_args: TokenStream, original: TokenStream) -> TokenStream {
+pub fn constructor(_args: TokenStream, original: TokenStream) -> TokenStream {
     let mut original = syn::parse_macro_input!(original as syn::ImplItemMethod);
     let temp_ident = syn::Ident::new(
         &format!("__private_{}", original.sig.ident),

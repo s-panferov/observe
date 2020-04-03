@@ -4,7 +4,8 @@ Lightweight Rust observables inspired by [MobX](https://mobx.js.org/). It's hard
 
 Note: **This library is unstable and is subject to change**
 
-The main goal of the library is to provide a state management library for web-based Rust applications and games.
+The main goal of the library is to provide a generic re-usable state 
+management library for Rust applications and games.
 
 Current state:
 
@@ -14,19 +15,19 @@ Current state:
   - [x] Computed — a calculation based on `Value`s and another `Computed` values
   - [x] Reaction — allows to setup callbacks and react to state changes
   - [x] Transaction — allows to batch several changes
-- [ ] Primitives
-  - [ ] Observable `Vec`
-  - [ ] Observable `Map`
-  - [ ] Observable `Future`
+- [ ] Extra
+  - [x] Observable `Future`
+  - [ ] Observable `Vec` ?
+  - [ ] Observable `Map` ?
 
 ## Example
 
 ```rust
-let mut value = Value::new(10);
-let double = Computed::new({
+let mut value = Value::from(Var::new(10));
+let double = Value::from(Computed::new({
   let value = value.clone();
   move |ctx| *value.observe(ctx) * 2
-});
+}));
 
 let reaction = autorun({
   let double = double.clone();

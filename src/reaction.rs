@@ -1,25 +1,38 @@
 use crate::context::EvalContext;
 use crate::{
-    eval::{AnyValue, Evaluation},
-    variable::Variable,
+    eval::Evaluation,
+    tracker::TrackerImpl,
+    types::{Apply, Type},
+    variable::default_hash,
+    Local, Shared,
 };
 
-use std::{hash::Hash, mem, rc::Rc};
+use std::{any::Any, hash::Hash, mem, rc::Rc, sync::Arc};
 
-pub struct Effect<T: Eq, R: Hash + 'static, Expr: Fn(&mut EvalContext) -> T, Eff: Fn(&mut T) -> R> {
+pub struct Effect<T, R, Expr, Eff, Impl>
+where
+    T: Eq,
+    R: Hash + 'static,
+    Expr: Fn(&mut EvalContext<Impl>) -> T,
+    Eff: Fn(&mut T) -> R,
+    Impl::Ptr: Apply<R>,
+    Impl: TrackerImpl,
+{
     expr: Expr,
     eff: Eff,
     hash: u64,
     cached: Option<T>,
-    current: Option<Rc<R>>,
+    current: Option<Type<Impl::Ptr, R>>,
 }
 
-impl<T, R, Expr, Eff> Effect<T, R, Expr, Eff>
+impl<T, R, Expr, Eff, Impl> Effect<T, R, Expr, Eff, Impl>
 where
     T: Eq,
     R: Hash + 'static,
-    Expr: Fn(&mut EvalContext) -> T,
+    Expr: Fn(&mut EvalContext<Impl>) -> T,
     Eff: Fn(&mut T) -> R,
+    Impl::Ptr: Apply<R>,
+    Impl: TrackerImpl,
 {
     pub fn new(expr: Expr, eff: Eff) -> Self {
         Effect {
@@ -30,34 +43,50 @@ where
             current: None,
         }
     }
-}
 
-impl<T, R, Expr, Eff> Evaluation for Effect<T, R, Expr, Eff>
-where
-    T: Eq + 'static,
-    R: Hash + 'static,
-    Expr: Fn(&mut EvalContext) -> T + 'static,
-    Eff: Fn(&mut T) -> R + 'static,
-{
-    fn evaluate(&mut self, context: &mut EvalContext) -> u64 {
+    fn evaluate(&mut self, context: &mut EvalContext<Impl>) -> u64 {
         let mut value: T = (self.expr)(context);
         if self.cached.as_ref() != Some(&value) {
             let res = (self.eff)(&mut value);
             let _old = mem::replace(&mut self.cached, Some(value));
-            let hash = Variable::hash(&res);
+            let hash = default_hash(&res);
             if self.hash != hash {
                 self.hash = hash;
-                let _old = mem::replace(&mut self.current, Some(Rc::new(res)));
+                let _old = mem::replace(&mut self.current, Some(Impl::ptr_wrap(res)));
             }
         }
         self.hash
     }
+}
 
-    fn get(&self) -> AnyValue {
-        self.current.as_ref().unwrap().clone()
+impl<T, R, Expr, Eff> Evaluation<Local> for Effect<T, R, Expr, Eff, Local>
+where
+    T: Eq + 'static,
+    R: Hash + 'static,
+    Expr: Fn(&mut EvalContext<Local>) -> T + 'static,
+    Eff: Fn(&mut T) -> R + 'static,
+{
+    fn evaluate(&mut self, ctx: &mut EvalContext<Local>) -> u64 {
+        self.evaluate(ctx)
     }
 
-    fn is_observer(&self) -> bool {
-        true
+    fn get(&self) -> Rc<dyn Any> {
+        self.current.as_ref().unwrap().clone()
+    }
+}
+
+impl<T, R, Expr, Eff> Evaluation<Shared> for Effect<T, R, Expr, Eff, Shared>
+where
+    T: Eq + Send + Sync + 'static,
+    R: Hash + Send + Sync + 'static,
+    Expr: Fn(&mut EvalContext<Shared>) -> T + 'static,
+    Eff: Fn(&mut T) -> R + 'static,
+{
+    fn evaluate(&mut self, ctx: &mut EvalContext<Shared>) -> u64 {
+        self.evaluate(ctx)
+    }
+
+    fn get(&self) -> Arc<dyn Any + Send + Sync> {
+        self.current.as_ref().unwrap().clone()
     }
 }

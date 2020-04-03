@@ -1,15 +1,15 @@
-use std::{any::Any, rc::Rc};
+use crate::{tracker::TrackerImpl, types::Apply, EvalContext};
 
-use crate::EvalContext;
+pub enum Invalidate {
+    SelfAndDeps,
+    OnlyDeps,
+}
 
-pub type AnyValue = Rc<dyn Any + 'static>;
-
-pub trait Evaluation {
-    fn evaluate(&mut self, ctx: &mut EvalContext) -> u64;
-
-    fn is_observer(&self) -> bool {
-        false
-    }
+pub trait Evaluation<Impl>
+where
+    Impl: TrackerImpl,
+{
+    fn evaluate(&mut self, ctx: &mut EvalContext<Impl>) -> u64;
 
     fn is_scheduled(&self) -> bool {
         false
@@ -19,20 +19,21 @@ pub trait Evaluation {
     fn on_become_observed(&mut self) {}
     fn on_become_unobserved(&mut self) {}
 
-    fn get(&self) -> AnyValue {
+    fn get(&self) -> <Impl::Ptr as Apply<Impl::Any>>::Result {
         unimplemented!()
     }
 
-    fn set(&mut self, _value: AnyValue) -> u64 {
+    fn set(&mut self, _value: <Impl::Ptr as Apply<Impl::Any>>::Result) -> (u64, Invalidate) {
         unimplemented!()
     }
 }
 
-impl<F: 'static> Evaluation for F
+impl<F: 'static, Impl: TrackerImpl> Evaluation<Impl> for F
 where
-    F: FnMut(&mut EvalContext) -> u64,
+    Impl: TrackerImpl,
+    F: Fn(&mut EvalContext<Impl>) -> u64,
 {
-    fn evaluate(&mut self, ctx: &mut EvalContext) -> u64 {
+    fn evaluate(&mut self, ctx: &mut EvalContext<Impl>) -> u64 {
         self(ctx)
     }
 }

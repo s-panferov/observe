@@ -1,21 +1,23 @@
 use mockall::predicate::*;
 
-use observe::{transaction, Value};
+use observe::{transaction, Computed, Shared, Value, Var};
 
 use crate::suite::spy::{SharedMock, Spy};
 
 #[test]
 fn check_autorun() {
     let spy = SharedMock::new();
-    let value = Value::var(10);
+    let value = Value::<_, Shared>::from(Var::new(10));
 
-    let reaction = Value::autorun({
+    let reaction = Value::from(Computed::new({
         let value = value.clone();
         let spy = spy.clone();
         move |ctx| {
             spy.get().u32(*value.observe(ctx));
         }
-    });
+    }));
+
+    reaction.autorun();
 
     spy.get()
         .expect_u32()
