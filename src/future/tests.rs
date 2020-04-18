@@ -25,8 +25,7 @@ async fn futured() {
 
     let (rx, mut stream) = fut_val.stream::<TokioRuntime>();
 
-    rx.autorun();
-    rx.update();
+    rx.autorun().update();
 
     println!("{:?}", stream.next().await);
     assert!(matches!(*fut_val.once(), Poll::Pending));

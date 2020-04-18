@@ -130,12 +130,14 @@ where
         }
     }
 
-    pub fn autorun(&self) {
+    pub fn autorun(&self) -> &Self {
         match self {
             Value::Empty => {}
             Value::Const(_v) => {}
             Value::Dynamic { tracker } => tracker.autorun(),
         };
+
+        self
     }
 
     pub fn update(&self) {
