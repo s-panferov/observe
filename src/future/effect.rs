@@ -1,59 +1,53 @@
 use std::future::Future;
-use std::{hash::Hash, marker::PhantomData, mem};
+use std::{hash::Hash, mem, pin::Pin};
 
-use super::FutureProvider;
-use crate::{tracker::TrackerImpl, EvalContext};
+use super::FutureFactory;
+use crate::EvalContext;
 
-pub struct FutureEff<V, R, F, Expr, Eff, Impl>
+pub struct FutureEffect<V, R, F, Expr, Eff>
 where
     V: Eq + 'static,
     R: Hash + 'static,
     F: Future<Output = R>,
-    Expr: FnMut(&mut EvalContext<Impl>) -> V,
+    Expr: FnMut(&mut EvalContext) -> V,
     Eff: FnMut(&mut V) -> F,
-    Impl: TrackerImpl,
 {
     expr: Expr,
     eff: Eff,
     cached: Option<V>,
-    _i: PhantomData<Impl>,
 }
 
-impl<V, R, F, Expr, Eff, Impl> FutureEff<V, R, F, Expr, Eff, Impl>
+impl<V, R, F, Expr, Eff> FutureEffect<V, R, F, Expr, Eff>
 where
     V: Eq + 'static,
     R: Hash + 'static,
     F: Future<Output = R> + 'static,
-    Expr: FnMut(&mut EvalContext<Impl>) -> V,
+    Expr: FnMut(&mut EvalContext) -> V,
     Eff: FnMut(&mut V) -> F,
-    Impl: TrackerImpl,
 {
     pub fn new(expr: Expr, eff: Eff) -> Self {
-        FutureEff {
+        FutureEffect {
             expr,
             eff,
             cached: None,
-            _i: PhantomData,
         }
     }
 }
 
-impl<V, R, F, Expr, Eff, Impl> FutureProvider<R, Impl> for FutureEff<V, R, F, Expr, Eff, Impl>
+impl<V, R, F, Expr, Eff> FutureFactory<R> for FutureEffect<V, R, F, Expr, Eff>
 where
     V: Eq + 'static,
     R: Hash + 'static,
     F: Future<Output = R> + 'static,
-    Expr: FnMut(&mut EvalContext<Impl>) -> V,
+    Expr: FnMut(&mut EvalContext) -> V,
     Eff: FnMut(&mut V) -> F,
-    Impl: TrackerImpl,
 {
-    type Output = F;
-    fn eval(&mut self, ctx: &mut EvalContext<Impl>) -> Option<F> {
+    fn eval(&mut self, ctx: &mut EvalContext) -> Option<Pin<Box<dyn Future<Output = R>>>> {
         let mut value = (self.expr)(ctx);
         if self.cached.as_ref() != Some(&value) {
             let res = (self.eff)(&mut value);
             let _old = mem::replace(&mut self.cached, Some(value));
-            return Some(res);
+            return Some(Box::pin(res));
         }
         None
     }

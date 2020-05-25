@@ -1,162 +1,161 @@
-use std::{any::Any, hash::Hash, rc::Rc, sync::Arc};
-
-use crate::context::EvalContext;
-use crate::{
-    eval::Evaluation,
-    tracker::{Local, Shared, TrackerImpl},
-    types::{Apply, Type},
-    value::Value,
-    variable::default_hash,
+use std::hash::Hash;
+use std::{
+    ops::Deref,
+    sync::{Arc, RwLock},
 };
 
-// pub struct Computed<T: Hash, Impl: TrackerImpl> {
-//     value: Value<T>,
-// }
+use crate::context::EvalContext;
+use crate::hashed::Hashed;
+use crate::observable::Observable;
+use crate::{
+    tracker::{Evaluation, Tracker},
+    Value,
+};
 
-// impl<T, Impl> Deref for Computed<T, Impl>
-// where
-//     T: Hash,
-//     Impl: TrackerImpl,
-// {
-//     type Target = Value<T>;
-//     fn deref(&self) -> &Self::Target {
-//         &self.value
-//     }
-// }
-
-// // impl<T> From<Computed<T>> for Value<T> {
-// //     fn from(from: Computed<T>) -> Value<T> {
-// //         from.value.clone()
-// //     }
-// // }
-
-// impl<T, Impl> Default for Computed<T, Impl>
-// where
-//     T: Hash,
-//     Impl: TrackerImpl,
-// {
-//     fn default() -> Self {
-//         Computed::empty()
-//     }
-// }
-
-// impl<T, Impl> Computed<T, Impl>
-// where
-//     T: Hash,
-//     Impl: TrackerImpl,
-// {
-//     pub fn new<F>(handler: F) -> Self
-//     where
-//         F: Fn(&mut EvalContext<Impl>) -> T + 'static,
-//     {
-//         let computed = Computed::empty();
-//         computed.set_handler(handler);
-//         computed
-//     }
-
-//     pub fn empty() -> Computed<T, Impl> {
-//         let tracker = Tracker::new("Computed".to_owned());
-//         Computed {
-//             value: Value::Dynamic { tracker },
-//         }
-//     }
-
-//     pub fn set_handler<F>(&self, handler: F)
-//     where
-//         F: Fn(&mut EvalContext<Impl>) -> T + 'static,
-//     {
-//         self.set_computation(Box::new(ComputedEngine::new(None, handler, false)));
-//     }
-// }
-
-pub struct Computed<T, F, Impl>
-where
-    T: Hash,
-    F: FnMut(&mut EvalContext<Impl>) -> T,
-    Impl: TrackerImpl,
-    Impl::Ptr: Apply<T>,
-{
-    current: Option<Type<Impl::Ptr, T>>,
-    func: F,
+pub trait ComputedFactory<T> {
+    fn eval(&mut self, ctx: &mut EvalContext) -> Option<T>;
 }
 
-impl<T, F, Impl> Computed<T, F, Impl>
+impl<T, H> ComputedFactory<T> for H
 where
-    T: Hash,
-    F: FnMut(&mut EvalContext<Impl>) -> T,
-    Impl: TrackerImpl,
-    Impl::Ptr: Apply<T>,
+    T: Hash + 'static,
+    H: FnMut(&mut EvalContext) -> T,
 {
-    pub fn new(func: F) -> Self {
+    fn eval(&mut self, ctx: &mut EvalContext) -> Option<T> {
+        Some((self)(ctx))
+    }
+}
+
+pub struct Computed<T>
+where
+    T: Clone + Hash + 'static,
+{
+    body: Arc<ComputedBody<T>>,
+}
+
+impl<T> Observable<T> for Computed<T>
+where
+    T: Clone + Hash + 'static,
+{
+    fn access(&self, ctx: Option<&mut EvalContext>) -> T {
+        self.body.access(ctx)
+    }
+}
+
+impl<T> Clone for Computed<T>
+where
+    T: Clone + Hash + 'static,
+{
+    fn clone(&self) -> Self {
         Computed {
-            current: None,
-            func,
+            body: self.body.clone(),
         }
     }
+}
 
-    pub fn create(value: Option<T>, func: F, _is_observer: bool) -> Self {
-        Computed {
-            current: value.map(|v| Impl::ptr_wrap(v)),
-            func,
-        }
+impl<T> Deref for Computed<T>
+where
+    T: Clone + Hash + 'static,
+{
+    type Target = Arc<ComputedBody<T>>;
+    fn deref(&self) -> &Self::Target {
+        &self.body
+    }
+}
+
+impl<T> Computed<T>
+where
+    T: Clone + Hash + 'static,
+{
+    pub fn new(func: impl Fn(&mut EvalContext) -> T + 'static) -> Self {
+        Self::create(None, Some(Box::new(func)))
     }
 
-    fn evaluate(&mut self, ctx: &mut EvalContext<Impl>) -> u64 {
-        let next = (self.func)(ctx);
-        let hash = default_hash(&next);
-        self.current.replace(Impl::ptr_wrap(next));
+    pub fn with(func: impl ComputedFactory<T> + 'static) -> Self {
+        Self::create(None, Some(Box::new(func)))
+    }
+
+    pub fn create(value: Option<T>, func: Option<Box<dyn ComputedFactory<T>>>) -> Self {
+        let tracker = Tracker::new();
+        let body = Arc::new(ComputedBody {
+            current: RwLock::new(value.map(|v| Hashed::new(v))),
+            func: RwLock::new(func),
+            tracker: tracker.clone(),
+        });
+
+        let computed = Computed { body };
+
+        Tracker::set_eval(&tracker, computed.body.clone());
+        computed
+    }
+
+    pub fn uninit() -> Self {
+        Self::create(None, None)
+    }
+}
+
+pub struct ComputedBody<T>
+where
+    T: Clone + Hash + 'static,
+{
+    current: RwLock<Option<Hashed<T>>>,
+    func: RwLock<Option<Box<dyn ComputedFactory<T>>>>,
+    tracker: Tracker,
+}
+
+impl<T> ComputedBody<T>
+where
+    T: Clone + Hash + 'static,
+{
+    pub fn set_func(&self, func: Box<dyn ComputedFactory<T>>) {
+        *self.func.write().unwrap() = Some(func);
+    }
+}
+
+impl<T> Deref for ComputedBody<T>
+where
+    T: Clone + Hash + 'static,
+{
+    type Target = Tracker;
+    fn deref(&self) -> &Self::Target {
+        &self.tracker
+    }
+}
+
+impl<T> Evaluation for ComputedBody<T>
+where
+    T: Clone + Hash + 'static,
+{
+    fn eval(&self, ctx: &mut EvalContext) -> u64 {
+        let mut func = self.func.write().unwrap();
+        let func = func.as_mut().expect("Function should be initialized");
+        let next = func.eval(ctx);
+        if next.is_none() {
+            // None means we don't want to do anything
+            return self.hash();
+        }
+        let hashed = Hashed::new(next.unwrap());
+        let hash = hashed.hash;
+        *self.current.write().unwrap() = Some(hashed);
         hash
     }
 }
 
-impl<T, F> Evaluation<Local> for Computed<T, F, Local>
+impl<T> Observable<T> for ComputedBody<T>
 where
-    T: Hash + 'static,
-    F: FnMut(&mut EvalContext<Local>) -> T,
+    T: Clone + Hash + 'static,
 {
-    fn evaluate(&mut self, ctx: &mut EvalContext<Local>) -> u64 {
-        self.evaluate(ctx)
-    }
-
-    fn get(&self) -> Rc<dyn Any + 'static> {
-        self.current.as_ref().map(|r| r.clone()).unwrap()
+    fn access(&self, ctx: Option<&mut EvalContext>) -> T {
+        self.tracker.access(ctx);
+        self.current.read().unwrap().as_ref().unwrap().value.clone()
     }
 }
 
-impl<T, F> Evaluation<Shared> for Computed<T, F, Shared>
+impl<T> From<Computed<T>> for Value<T>
 where
-    T: Hash + Send + Sync + 'static,
-    F: FnMut(&mut EvalContext<Shared>) -> T,
+    T: Hash + Clone + 'static,
 {
-    fn evaluate(&mut self, ctx: &mut EvalContext<Shared>) -> u64 {
-        self.evaluate(ctx)
-    }
-
-    fn get(&self) -> Arc<dyn Any + Send + Sync + 'static> {
-        self.current.as_ref().map(|r| r.clone()).unwrap()
-    }
-}
-
-impl<T, F> From<Computed<T, F, Shared>> for Value<T, Shared>
-where
-    T: Hash + Send + Sync + 'static,
-    F: FnMut(&mut EvalContext<Shared>) -> T + Send + Sync + 'static,
-{
-    fn from(from: Computed<T, F, Shared>) -> Value<T, Shared> {
-        let value = Value::<T, Shared>::uninit();
-        value.set_computation(Box::new(from));
-        value
-    }
-}
-
-impl<T, F> From<Computed<T, F, Local>> for Value<T, Local>
-where
-    T: Hash + 'static,
-    F: FnMut(&mut EvalContext<Local>) -> T + 'static,
-{
-    fn from(from: Computed<T, F, Local>) -> Value<T, Local> {
-        let value = Value::<T, Local>::uninit();
-        value.set_computation(Box::new(from));
-        value
+    fn from(value: Computed<T>) -> Self {
+        Value { value: value.body }
     }
 }
