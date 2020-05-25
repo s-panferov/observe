@@ -1,4 +1,4 @@
-use crate::{Const, EvalContext, Observable};
+use crate::{observable::Ref, Const, EvalContext, Observable};
 use std::{hash::Hash, sync::Arc};
 
 pub struct Value<T> {
@@ -14,7 +14,7 @@ impl<T> Clone for Value<T> {
 }
 
 impl<T> Observable<T> for Value<T> {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> T {
+    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.value.access(ctx)
     }
 }

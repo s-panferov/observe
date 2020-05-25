@@ -11,7 +11,10 @@ use futures::future::AbortHandle;
 use super::factory::FutureFactory;
 use super::runtime::FutureRuntime;
 
-use crate::{tracker::Evaluation, EvalContext, MutObservable, Observable, Transaction, Value, Var};
+use crate::{
+    observable::Ref, tracker::Evaluation, EvalContext, MutObservable, Observable, Transaction,
+    Value, Var,
+};
 
 pub struct ComputedFuture<T, Rt>
 where
@@ -38,7 +41,7 @@ where
     T: Clone + Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Poll<T> {
+    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<Poll<T>> {
         self.body.access(ctx)
     }
 }
@@ -133,7 +136,7 @@ where
     T: Hash + Clone + 'static,
     Rt: FutureRuntime + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Poll<T> {
+    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<Poll<T>> {
         self.current.access(ctx)
     }
 }
@@ -143,7 +146,10 @@ where
     T: Hash + Clone + 'static,
     Rt: FutureRuntime + 'static,
 {
-    fn modify(&self, tx: Option<&mut Transaction>, value: Poll<T>) {
+    fn modify<F>(&self, tx: Option<&mut Transaction>, value: F)
+    where
+        F: FnOnce(&mut Poll<T>),
+    {
         self.current.modify(tx, value)
     }
 }

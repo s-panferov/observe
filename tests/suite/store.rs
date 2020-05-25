@@ -37,11 +37,11 @@ where
     }
 
     fn computed(value: &Var<T>, ctx: &mut EvalContext) -> <T as std::ops::Mul>::Output {
-        value.get(ctx) * value.get(ctx)
+        value.get(ctx).clone() * value.get(ctx).clone()
     }
 
     fn reaction(computed: &Computed<<T as std::ops::Mul>::Output>, ctx: &mut EvalContext) {
-        println!("REACTION {:?}", computed.get(ctx))
+        println!("REACTION {:?}", *computed.get(ctx))
     }
 
     fn data(_ctx: &mut EvalContext) -> impl Future<Output = u64> {

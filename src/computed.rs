@@ -1,16 +1,15 @@
 use std::hash::Hash;
-use std::{
-    ops::Deref,
-    sync::{Arc, RwLock},
-};
+use std::{ops::Deref, sync::Arc};
 
 use crate::context::EvalContext;
 use crate::hashed::Hashed;
-use crate::observable::Observable;
+use crate::observable::{Observable, Ref};
 use crate::{
     tracker::{Evaluation, Tracker},
     Value,
 };
+
+use parking_lot::{RwLock, RwLockReadGuard};
 
 pub trait ComputedFactory<T> {
     fn eval(&mut self, ctx: &mut EvalContext) -> Option<T>;
@@ -28,23 +27,23 @@ where
 
 pub struct Computed<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     body: Arc<ComputedBody<T>>,
 }
 
 impl<T> Observable<T> for Computed<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> T {
+    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.body.access(ctx)
     }
 }
 
 impl<T> Clone for Computed<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     fn clone(&self) -> Self {
         Computed {
@@ -55,7 +54,7 @@ where
 
 impl<T> Deref for Computed<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     type Target = Arc<ComputedBody<T>>;
     fn deref(&self) -> &Self::Target {
@@ -65,7 +64,7 @@ where
 
 impl<T> Computed<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     pub fn new(func: impl Fn(&mut EvalContext) -> T + 'static) -> Self {
         Self::create(None, Some(Box::new(func)))
@@ -96,7 +95,7 @@ where
 
 pub struct ComputedBody<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     current: RwLock<Option<Hashed<T>>>,
     func: RwLock<Option<Box<dyn ComputedFactory<T>>>>,
@@ -105,16 +104,16 @@ where
 
 impl<T> ComputedBody<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     pub fn set_func(&self, func: Box<dyn ComputedFactory<T>>) {
-        *self.func.write().unwrap() = Some(func);
+        *self.func.write() = Some(func);
     }
 }
 
 impl<T> Deref for ComputedBody<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     type Target = Tracker;
     fn deref(&self) -> &Self::Target {
@@ -124,10 +123,10 @@ where
 
 impl<T> Evaluation for ComputedBody<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     fn eval(&self, ctx: &mut EvalContext) -> u64 {
-        let mut func = self.func.write().unwrap();
+        let mut func = self.func.write();
         let func = func.as_mut().expect("Function should be initialized");
         let next = func.eval(ctx);
         if next.is_none() {
@@ -136,24 +135,26 @@ where
         }
         let hashed = Hashed::new(next.unwrap());
         let hash = hashed.hash;
-        *self.current.write().unwrap() = Some(hashed);
+        *self.current.write() = Some(hashed);
         hash
     }
 }
 
 impl<T> Observable<T> for ComputedBody<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> T {
+    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.tracker.access(ctx);
-        self.current.read().unwrap().as_ref().unwrap().value.clone()
+        Ref::Lock(RwLockReadGuard::map(self.current.read(), |v| {
+            &v.as_ref().unwrap().value
+        }))
     }
 }
 
 impl<T> From<Computed<T>> for Value<T>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
 {
     fn from(value: Computed<T>) -> Self {
         Value { value: value.body }

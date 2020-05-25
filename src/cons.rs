@@ -3,7 +3,7 @@ use std::{ops::Deref, sync::Arc};
 
 use crate::context::EvalContext;
 use crate::hashed::Hashed;
-use crate::observable::Observable;
+use crate::observable::{Observable, Ref};
 use crate::{tracker::Evaluation, Value};
 
 pub struct Const<T>
@@ -28,7 +28,7 @@ impl<T> Observable<T> for Const<T>
 where
     T: Clone + Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> T {
+    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.body.access(ctx)
     }
 }
@@ -72,8 +72,8 @@ impl<T> Observable<T> for ConstBody<T>
 where
     T: Hash + Clone + 'static,
 {
-    fn access(&self, _ctx: Option<&mut EvalContext>) -> T {
-        self.hashed.value.clone()
+    fn access(&self, _ctx: Option<&mut EvalContext>) -> Ref<T> {
+        Ref::Ref(&self.hashed.value)
     }
 }
 

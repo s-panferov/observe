@@ -1,4 +1,4 @@
-use observe::{Computed, MutObservable, Observable, Var};
+use observe::{MutObservable, Observable, Var};
 
 use crate::suite::spy::{SharedMock, Spy};
 use enclose::enclose;
@@ -11,12 +11,12 @@ fn simple_computed() {
     let computed = observe::computed!((value, spy) ctx => {
         spy.get().trigger();
         let i = value.get(ctx);
-        i * 2
+        *i * 2
     });
 
     spy.get().expect_trigger().return_const(()).times(1);
 
-    assert_eq!(computed.once(), 20);
+    assert_eq!(*computed.once(), 20);
 
     spy.get().checkpoint();
 
@@ -26,7 +26,7 @@ fn simple_computed() {
     value.set_now(40);
     value.set_now(30);
 
-    assert_eq!(computed.once(), 60);
+    assert_eq!(*computed.once(), 60);
 }
 
 #[test]
@@ -38,12 +38,12 @@ fn computed_chain() {
 
     let double = observe::computed!((value, double_spy) ctx => {
         double_spy.get().trigger();
-        value.get(ctx) * 2
+        *value.get(ctx) * 2
     });
 
     let quadruple = observe::computed!((double, quadruple_spy) ctx => {
         quadruple_spy.get().trigger();
-        double.get(ctx) * 2
+        *double.get(ctx) * 2
     });
 
     double_spy.get().expect_trigger().return_const(()).times(0);
@@ -63,7 +63,7 @@ fn computed_chain() {
         .return_const(())
         .times(1);
 
-    assert_eq!(quadruple.once(), 40);
+    assert_eq!(*quadruple.once(), 40);
 
     double_spy.get().checkpoint();
     quadruple_spy.get().checkpoint();
@@ -79,6 +79,6 @@ fn computed_chain() {
         .return_const(())
         .times(1);
 
-    assert_eq!(quadruple.once(), 80);
-    assert_eq!(quadruple.once(), 80);
+    assert_eq!(*quadruple.once(), 80);
+    assert_eq!(*quadruple.once(), 80);
 }

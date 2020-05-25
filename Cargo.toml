@@ -10,6 +10,7 @@ futures = { version = "0.3.4", optional = true }
 wasm-bindgen-futures = { version = "0.4.9", optional = true }
 fxhash="*"
 snowflake="*"
+parking_lot="*"
 
 [features]
 default=[]

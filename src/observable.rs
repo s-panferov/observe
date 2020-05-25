@@ -1,17 +1,35 @@
 use crate::{context::EvalContext, Computed, Transaction};
-use std::hash::Hash;
+use std::{hash::Hash, ops::Deref};
 
 #[cfg(feature = "futures")]
 use crate::future::{ComputedFuture, FutureRuntime};
 
-pub trait Observable<T> {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> T;
+use parking_lot::MappedRwLockReadGuard;
 
-    fn get(&self, ctx: &mut EvalContext) -> T {
+pub enum Ref<'a, T> {
+    Lock(MappedRwLockReadGuard<'a, T>),
+    Ref(&'a T),
+}
+
+impl<'a, T> Deref for Ref<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Ref::Lock(guard) => guard.deref(),
+            Ref::Ref(t) => t,
+        }
+    }
+}
+
+pub trait Observable<T> {
+    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T>;
+
+    fn get(&self, ctx: &mut EvalContext) -> Ref<T> {
         self.access(Some(ctx))
     }
 
-    fn once(&self) -> T {
+    fn once(&self) -> Ref<T> {
         self.access(None)
     }
 }
@@ -38,7 +56,7 @@ pub trait ObservableExt<T>: Observable<T> + Clone {
         futures::channel::mpsc::UnboundedReceiver<T>,
     )
     where
-        T: 'static,
+        T: Clone + 'static,
         Rt: FutureRuntime,
         Self: 'static,
     {
@@ -49,7 +67,7 @@ pub trait ObservableExt<T>: Observable<T> + Clone {
             let this = this.clone();
             move |ctx: &mut EvalContext| {
                 use futures::sink::SinkExt;
-                let value = this.get(ctx);
+                let value = this.get(ctx).clone();
                 let mut sender = sender.clone();
                 async move {
                     sender.send(value).await.unwrap();
@@ -64,12 +82,15 @@ pub trait ObservableExt<T>: Observable<T> + Clone {
 impl<T, V> ObservableExt<V> for T where T: Observable<V> + Clone {}
 
 pub trait MutObservable<T>: Observable<T> {
-    fn modify(&self, tx: Option<&mut Transaction>, value: T);
+    fn modify<F>(&self, tx: Option<&mut Transaction>, mapper: F)
+    where
+        F: FnOnce(&mut T);
+
     fn set(&self, tx: &mut Transaction, value: T) {
-        self.modify(Some(tx), value)
+        self.modify(Some(tx), move |v| *v = value)
     }
 
     fn set_now(&self, value: T) {
-        self.modify(None, value)
+        self.modify(None, move |v| *v = value)
     }
 }

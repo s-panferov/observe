@@ -11,7 +11,7 @@ fn check_autorun() {
     let value = Var::new(10);
 
     let reaction = Computed::new(enc!((value, spy) move |ctx| {
-        spy.get().u32(value.get(ctx));
+        spy.get().u32(*value.get(ctx));
     }));
 
     reaction.autorun();
