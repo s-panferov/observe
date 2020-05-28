@@ -11,6 +11,7 @@ wasm-bindgen-futures = { version = "0.4.9", optional = true }
 fxhash="*"
 snowflake="*"
 parking_lot="*"
+enclose="*"
 
 [features]
 default=[]
@@ -25,7 +26,6 @@ tokio = { version = "0.2.20", optional = true, features = ["rt-core", "rt-util",
 [dev-dependencies]
 mockall= "0.7.1"
 tracing-subscriber= "0.2.5"
-enclose="*"
 
 [[test]]
 name = "tests"

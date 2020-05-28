@@ -1,5 +1,5 @@
 use std::hash::Hash;
-use std::{ops::Deref, sync::Arc};
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 use parking_lot::{RwLock, RwLockReadGuard};
 
@@ -16,6 +16,15 @@ where
     T: Hash + 'static,
 {
     body: Arc<VarBody<T>>,
+}
+
+impl<T> std::fmt::Debug for Var<T>
+where
+    T: Hash + Debug + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.body.fmt(f)
+    }
 }
 
 impl<T> Clone for Var<T>
@@ -35,6 +44,13 @@ where
 {
     fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.body.access(ctx)
+    }
+
+    fn debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        T: Debug,
+    {
+        self.body.fmt(f)
     }
 }
 
@@ -86,6 +102,13 @@ impl<T> Observable<T> for VarBody<T> {
     fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.tracker.access(ctx);
         Ref::Lock(RwLockReadGuard::map(self.hashed.read(), |v| &v.value))
+    }
+
+    fn debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        T: Debug,
+    {
+        write!(f, "Var[{:?}]", self.hashed.read())
     }
 }
 

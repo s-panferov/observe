@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{fmt::Debug, hash::Hash};
 
 pub struct Hashed<T> {
     pub value: T,
@@ -12,5 +12,14 @@ impl<T> Hashed<T> {
     {
         let hash = fxhash::hash64(&value);
         Self { value, hash }
+    }
+}
+
+impl<T> Debug for Hashed<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
     }
 }

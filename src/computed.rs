@@ -1,5 +1,5 @@
 use std::hash::Hash;
-use std::{ops::Deref, sync::Arc};
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 use crate::context::EvalContext;
 use crate::hashed::Hashed;
@@ -38,6 +38,13 @@ where
 {
     fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.body.access(ctx)
+    }
+
+    fn debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        T: Debug,
+    {
+        self.body.debug(f)
     }
 }
 
@@ -150,6 +157,13 @@ where
             &v.as_ref().unwrap().value
         }))
     }
+
+    fn debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        T: Debug,
+    {
+        write!(f, "Computed[{:?}]", self.current.read())
+    }
 }
 
 impl<T> From<Computed<T>> for Value<T>
@@ -158,5 +172,16 @@ where
 {
     fn from(value: Computed<T>) -> Self {
         Value { value: value.body }
+    }
+}
+
+impl<T> From<&Computed<T>> for Value<T>
+where
+    T: Hash + 'static,
+{
+    fn from(value: &Computed<T>) -> Self {
+        Value {
+            value: value.body.clone(),
+        }
     }
 }

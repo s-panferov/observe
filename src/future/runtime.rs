@@ -3,7 +3,7 @@
 use futures::Future;
 
 /// https://github.com/rust-lang/rust/issues/27732
-pub trait FutureRuntime {
+pub trait FutureRuntime: Send + Sync {
     type Bounds: ?Sized;
 
     #[cfg(nightly)]

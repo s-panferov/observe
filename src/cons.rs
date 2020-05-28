@@ -8,14 +8,14 @@ use crate::{tracker::Evaluation, Value};
 
 pub struct Const<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     body: Arc<ConstBody<T>>,
 }
 
 impl<T> Clone for Const<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     fn clone(&self) -> Self {
         Const {
@@ -26,7 +26,7 @@ where
 
 impl<T> Observable<T> for Const<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
         self.body.access(ctx)
@@ -35,7 +35,7 @@ where
 
 impl<T> Deref for Const<T>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
 {
     type Target = Arc<ConstBody<T>>;
     fn deref(&self) -> &Self::Target {
@@ -49,7 +49,7 @@ pub struct ConstBody<T> {
 
 impl<T> Const<T>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
 {
     pub fn new(value: T) -> Self {
         let body = Arc::new(ConstBody {
@@ -61,7 +61,7 @@ where
 
 impl<T> Evaluation for ConstBody<T>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
 {
     fn eval(&self, _ctx: &mut EvalContext) -> u64 {
         self.hashed.hash
@@ -70,7 +70,7 @@ where
 
 impl<T> Observable<T> for ConstBody<T>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
 {
     fn access(&self, _ctx: Option<&mut EvalContext>) -> Ref<T> {
         Ref::Ref(&self.hashed.value)
@@ -79,7 +79,7 @@ where
 
 impl<T> From<Const<T>> for Value<T>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
 {
     fn from(value: Const<T>) -> Self {
         Value { value: value.body }

@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     hash::Hash,
     marker::PhantomData,
     ops::Deref,
@@ -12,13 +13,13 @@ use super::factory::FutureFactory;
 use super::runtime::FutureRuntime;
 
 use crate::{
-    observable::Ref, tracker::Evaluation, EvalContext, MutObservable, Observable, Transaction,
-    Value, Var,
+    observable::Ref, tracker::Evaluation, EvalContext, MutObservable, Observable, Tracker,
+    Transaction, Value, Var,
 };
 
 pub struct ComputedFuture<T, Rt>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     body: Arc<ComputedFutureBody<T, Rt>>,
@@ -26,7 +27,7 @@ where
 
 impl<T, Rt> Clone for ComputedFuture<T, Rt>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     fn clone(&self) -> Self {
@@ -38,17 +39,24 @@ where
 
 impl<T, Rt> Observable<Poll<T>> for ComputedFuture<T, Rt>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<Poll<T>> {
         self.body.access(ctx)
     }
+
+    fn debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        Poll<T>: Debug,
+    {
+        self.body.debug(f)
+    }
 }
 
 impl<T, Rt> Deref for ComputedFuture<T, Rt>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     type Target = Arc<ComputedFutureBody<T, Rt>>;
@@ -59,17 +67,18 @@ where
 
 pub struct ComputedFutureBody<T, Rt>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     state: RwLock<ComputedFutureState<T, Rt>>,
+    tracker: Tracker,
     current: Var<Poll<T>>,
     _rt: PhantomData<Rt>,
 }
 
 pub struct ComputedFutureState<T, Rt>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     observed: bool,
@@ -80,7 +89,7 @@ where
 
 impl<T, Rt> Deref for ComputedFutureBody<T, Rt>
 where
-    T: Clone + Hash + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     type Target = Var<Poll<T>>;
@@ -91,7 +100,7 @@ where
 
 impl<T, Rt> ComputedFuture<T, Rt>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     pub fn new(factory: impl FutureFactory<T> + 'static) -> Self {
@@ -105,6 +114,7 @@ where
     fn create(factory: Option<Box<dyn FutureFactory<T>>>) -> Self {
         let body = Arc::new(ComputedFutureBody {
             current: Var::new(Poll::Pending),
+            tracker: Tracker::new(),
             state: RwLock::new(ComputedFutureState {
                 observed: false,
                 reference: None,
@@ -115,6 +125,8 @@ where
         });
 
         body.state.write().unwrap().reference = Some(Arc::downgrade(&body));
+        Tracker::set_eval(&body.tracker, body.clone());
+
         let future = ComputedFuture { body };
 
         future
@@ -123,7 +135,7 @@ where
 
 impl<T, Rt> ComputedFutureBody<T, Rt>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     pub fn set_factory(&self, factory: impl FutureFactory<T> + 'static) {
@@ -133,17 +145,30 @@ where
 
 impl<T, Rt> Observable<Poll<T>> for ComputedFutureBody<T, Rt>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<Poll<T>> {
-        self.current.access(ctx)
+        if let Some(ctx) = ctx {
+            self.tracker.access(Some(ctx));
+            self.current.access(Some(ctx))
+        } else {
+            self.tracker.access(None);
+            self.current.access(None)
+        }
+    }
+
+    fn debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        Poll<T>: Debug,
+    {
+        self.current.debug(f)
     }
 }
 
 impl<T, Rt> MutObservable<Poll<T>> for ComputedFutureBody<T, Rt>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
     fn modify<F>(&self, tx: Option<&mut Transaction>, value: F)
@@ -156,8 +181,8 @@ where
 
 impl<T, Rt> Evaluation for ComputedFutureBody<T, Rt>
 where
-    T: Hash + Clone + 'static,
-    Rt: FutureRuntime + Send + Sync + 'static,
+    T: Hash + 'static,
+    Rt: FutureRuntime + 'static,
 {
     fn on_become_observed(&self) {
         self.state.write().unwrap().observed = true;
@@ -207,7 +232,7 @@ where
 
 impl<T, Rt> From<ComputedFuture<T, Rt>> for Value<Poll<T>>
 where
-    T: Hash + Clone + 'static,
+    T: Hash + 'static,
     Rt: FutureRuntime + Send + Sync + 'static,
 {
     fn from(value: ComputedFuture<T, Rt>) -> Self {

@@ -5,7 +5,7 @@ mod hashed;
 mod observable;
 
 mod cons;
-mod macros;
+pub mod macros;
 mod tracker;
 mod transaction;
 mod value;

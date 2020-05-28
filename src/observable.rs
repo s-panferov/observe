@@ -1,5 +1,5 @@
 use crate::{context::EvalContext, Computed, Transaction};
-use std::{hash::Hash, ops::Deref};
+use std::{fmt::Debug, hash::Hash, ops::Deref};
 
 #[cfg(feature = "futures")]
 use crate::future::{ComputedFuture, FutureRuntime};
@@ -27,6 +27,13 @@ pub trait Observable<T> {
 
     fn get(&self, ctx: &mut EvalContext) -> Ref<T> {
         self.access(Some(ctx))
+    }
+
+    fn debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        T: Debug,
+    {
+        write!(f, "_")
     }
 
     fn once(&self) -> Ref<T> {
