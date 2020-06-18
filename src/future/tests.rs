@@ -16,7 +16,7 @@ async fn futured() {
 
     tracing::subscriber::set_global_default(logs).unwrap();
 
-    let fut_val = ComputedFuture::<_, Tokio>::new(move |_ctx: &mut EvalContext| async {
+    let fut_val = ComputedFuture::<_, Tokio>::new(move |_ctx: & EvalContext| async {
         tokio::time::delay_for(Duration::from_millis(200)).await;
         true
     });

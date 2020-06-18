@@ -9,7 +9,7 @@ where
     V: Eq + 'static,
     R: Hash + 'static,
     F: Future<Output = R>,
-    Expr: FnMut(&mut EvalContext) -> V,
+    Expr: FnMut(&EvalContext) -> V,
     Eff: FnMut(&mut V) -> F,
 {
     expr: Expr,
@@ -22,7 +22,7 @@ where
     V: Eq + 'static,
     R: Hash + 'static,
     F: Future<Output = R> + 'static,
-    Expr: FnMut(&mut EvalContext) -> V,
+    Expr: FnMut(&EvalContext) -> V,
     Eff: FnMut(&mut V) -> F,
 {
     pub fn new(expr: Expr, eff: Eff) -> Self {
@@ -39,10 +39,10 @@ where
     V: Eq + 'static,
     R: Hash + 'static,
     F: Future<Output = R> + 'static,
-    Expr: FnMut(&mut EvalContext) -> V,
+    Expr: FnMut(&EvalContext) -> V,
     Eff: FnMut(&mut V) -> F,
 {
-    fn eval(&mut self, ctx: &mut EvalContext) -> Option<Pin<Box<dyn Future<Output = R>>>> {
+    fn eval(&mut self, ctx: &EvalContext) -> Option<Pin<Box<dyn Future<Output = R>>>> {
         let mut value = (self.expr)(ctx);
         if self.cached.as_ref() != Some(&value) {
             let res = (self.eff)(&mut value);

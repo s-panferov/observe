@@ -42,7 +42,7 @@ where
     T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<Poll<T>> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<Poll<T>> {
         self.body.access(ctx)
     }
 
@@ -148,7 +148,7 @@ where
     T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<Poll<T>> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<Poll<T>> {
         if let Some(ctx) = ctx {
             self.tracker.access(Some(ctx));
             self.current.access(Some(ctx))
@@ -192,7 +192,7 @@ where
         self.state.write().unwrap().observed = false;
     }
 
-    fn eval(&self, ctx: &mut EvalContext) -> u64 {
+    fn eval(&self, ctx: &EvalContext) -> u64 {
         let mut state = self.state.write().unwrap();
 
         let future = state.factory.as_mut().and_then(|f| f.eval(ctx));

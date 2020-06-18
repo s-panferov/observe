@@ -33,7 +33,7 @@ pub trait Evaluation {
     fn is_scheduled(&self) -> bool {
         false
     }
-    fn eval(&self, ctx: &mut EvalContext) -> u64;
+    fn eval(&self, ctx: &EvalContext) -> u64;
 }
 
 #[derive(Clone)]
@@ -58,7 +58,7 @@ impl Tracker {
         self.body.write().unwrap().is_observer = true;
     }
 
-    pub fn access(&self, ctx: Option<&mut EvalContext>) {
+    pub fn access(&self, ctx: Option<&EvalContext>) {
         if ctx.is_some() {
             ctx.unwrap().access(self.clone());
         }
@@ -202,18 +202,14 @@ impl TrackerBody {
 
     pub fn evaluate(&mut self, self_ref: WeakTracker) {
         let prev_used = std::mem::replace(&mut self.based_on, HashMap::new());
-        let mut ctx = EvalContext::new(prev_used);
+
+        let mut ctx = EvalContext::new();
+
+        let prev_used = HashSet::from_iter(prev_used.keys().cloned());
         let hash = self.eval().eval(&mut ctx);
-        let using = HashMap::from_iter(ctx.using.iter().map(|t| {
-            let version = t.hash();
-            (t.clone(), version)
-        }));
+        let using = ctx.into_used();
 
-        self.hash = hash;
-        self.based_on = using;
-        self.state = TrackerState::Good;
-
-        for based_on in ctx.diff_added() {
+        for based_on in using.difference(&prev_used) {
             let mut inner = based_on.body.write().unwrap();
             inner.report_used_by(self_ref.clone());
             if self.is_observer {
@@ -221,13 +217,22 @@ impl TrackerBody {
             }
         }
 
-        for based_on in ctx.diff_removed() {
+        for based_on in prev_used.difference(&using) {
             let mut inner = based_on.body.write().unwrap();
             inner.report_not_more_used_by(&self_ref);
             if self.is_observer {
                 inner.dec_observers()
             }
         }
+
+        let using = HashMap::from_iter(using.into_iter().map(|t| {
+            let version = t.hash();
+            (t, version)
+        }));
+
+        self.hash = hash;
+        self.based_on = using;
+        self.state = TrackerState::Good;
     }
 
     /// Called by Reactions

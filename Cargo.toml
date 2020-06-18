@@ -12,6 +12,7 @@ fxhash="*"
 snowflake="*"
 parking_lot="*"
 enclose="*"
+observe_macro = {path="./macros"}
 
 [features]
 default=[]

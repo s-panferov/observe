@@ -28,7 +28,7 @@ impl<T> Observable<T> for Const<T>
 where
     T: Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<T> {
         self.body.access(ctx)
     }
 }
@@ -63,7 +63,7 @@ impl<T> Evaluation for ConstBody<T>
 where
     T: Hash + 'static,
 {
-    fn eval(&self, _ctx: &mut EvalContext) -> u64 {
+    fn eval(&self, _ctx: &EvalContext) -> u64 {
         self.hashed.hash
     }
 }
@@ -72,7 +72,7 @@ impl<T> Observable<T> for ConstBody<T>
 where
     T: Hash + 'static,
 {
-    fn access(&self, _ctx: Option<&mut EvalContext>) -> Ref<T> {
+    fn access(&self, _ctx: Option<&EvalContext>) -> Ref<T> {
         Ref::Ref(&self.hashed.value)
     }
 }

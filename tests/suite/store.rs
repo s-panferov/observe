@@ -5,7 +5,6 @@ use observe::{
     transaction, Computed, EvalContext, MutObservable, Observable, Transaction, Var,
 };
 
-use enclose::enclose;
 use std::{fmt::Debug, hash::Hash, ops::Mul};
 
 struct Store<T: Mul + Hash + Debug + Clone + 'static>
@@ -36,15 +35,15 @@ where
         }
     }
 
-    fn computed(value: &Var<T>, ctx: &mut EvalContext) -> <T as std::ops::Mul>::Output {
+    fn computed(value: &Var<T>, ctx: &EvalContext) -> <T as std::ops::Mul>::Output {
         value.get(ctx).clone() * value.get(ctx).clone()
     }
 
-    fn reaction(computed: &Computed<<T as std::ops::Mul>::Output>, ctx: &mut EvalContext) {
+    fn reaction(computed: &Computed<<T as std::ops::Mul>::Output>, ctx: &EvalContext) {
         println!("REACTION {:?}", *computed.get(ctx))
     }
 
-    fn data(_ctx: &mut EvalContext) -> impl Future<Output = u64> {
+    fn data(_ctx: &EvalContext) -> impl Future<Output = u64> {
         futures::future::ready(10)
     }
 

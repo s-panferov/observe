@@ -42,7 +42,7 @@ impl<T> Observable<T> for Var<T>
 where
     T: Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<T> {
         self.body.access(ctx)
     }
 
@@ -93,13 +93,13 @@ impl<T> Deref for VarBody<T> {
 }
 
 impl<T> Evaluation for VarBody<T> {
-    fn eval(&self, _ctx: &mut EvalContext) -> u64 {
+    fn eval(&self, _ctx: &EvalContext) -> u64 {
         self.hashed.read().hash
     }
 }
 
 impl<T> Observable<T> for VarBody<T> {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<T> {
         self.tracker.access(ctx);
         Ref::Lock(RwLockReadGuard::map(self.hashed.read(), |v| &v.value))
     }

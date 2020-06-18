@@ -12,15 +12,15 @@ use crate::{
 use parking_lot::{RwLock, RwLockReadGuard};
 
 pub trait ComputedFactory<T> {
-    fn eval(&mut self, ctx: &mut EvalContext) -> Option<T>;
+    fn eval(&mut self, ctx: &EvalContext) -> Option<T>;
 }
 
 impl<T, H> ComputedFactory<T> for H
 where
     T: Hash + 'static,
-    H: FnMut(&mut EvalContext) -> T,
+    H: FnMut(&EvalContext) -> T,
 {
-    fn eval(&mut self, ctx: &mut EvalContext) -> Option<T> {
+    fn eval(&mut self, ctx: &EvalContext) -> Option<T> {
         Some((self)(ctx))
     }
 }
@@ -36,7 +36,7 @@ impl<T> Observable<T> for Computed<T>
 where
     T: Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<T> {
         self.body.access(ctx)
     }
 
@@ -73,7 +73,7 @@ impl<T> Computed<T>
 where
     T: Hash + 'static,
 {
-    pub fn new(func: impl Fn(&mut EvalContext) -> T + 'static) -> Self {
+    pub fn new(func: impl Fn(&EvalContext) -> T + 'static) -> Self {
         Self::create(None, Some(Box::new(func)))
     }
 
@@ -132,7 +132,7 @@ impl<T> Evaluation for ComputedBody<T>
 where
     T: Hash + 'static,
 {
-    fn eval(&self, ctx: &mut EvalContext) -> u64 {
+    fn eval(&self, ctx: &EvalContext) -> u64 {
         let mut func = self.func.write();
         let func = func.as_mut().expect("Function should be initialized");
         let next = func.eval(ctx);
@@ -151,7 +151,7 @@ impl<T> Observable<T> for ComputedBody<T>
 where
     T: Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<T> {
         self.tracker.access(ctx);
         Ref::Lock(RwLockReadGuard::map(self.current.read(), |v| {
             &v.as_ref().unwrap().value

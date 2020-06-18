@@ -53,7 +53,7 @@ impl<T> Observable<T> for Value<T>
 where
     T: Hash + 'static,
 {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T> {
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<T> {
         self.value.access(ctx)
     }
 

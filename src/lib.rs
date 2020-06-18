@@ -26,3 +26,5 @@ pub use tracker::{Evaluation, Tracker, WeakTracker};
 pub use transaction::{transaction, Transaction};
 pub use value::Value;
 pub use var::Var;
+
+pub use observe_macro::*;

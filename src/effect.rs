@@ -8,7 +8,7 @@ where
     T: Eq + 'static,
     R: Clone + Hash + 'static,
 {
-    expr: Box<dyn Fn(&mut EvalContext) -> T>,
+    expr: Box<dyn Fn(&EvalContext) -> T>,
     eff: Box<dyn Fn(&mut T) -> R>,
     cached: RwLock<Option<T>>,
 }
@@ -18,7 +18,7 @@ where
     T: Eq + 'static,
     R: Clone + Hash + 'static,
 {
-    pub fn new(expr: Box<dyn Fn(&mut EvalContext) -> T>, eff: Box<dyn Fn(&mut T) -> R>) -> Self {
+    pub fn new(expr: Box<dyn Fn(&EvalContext) -> T>, eff: Box<dyn Fn(&mut T) -> R>) -> Self {
         Effect {
             expr,
             eff,
@@ -32,7 +32,7 @@ where
     T: Eq + 'static,
     R: Clone + Hash + 'static,
 {
-    fn eval(&mut self, ctx: &mut EvalContext) -> Option<R> {
+    fn eval(&mut self, ctx: &EvalContext) -> Option<R> {
         let mut value: T = (self.expr)(ctx);
         if self.cached.read().unwrap().as_ref() != Some(&value) {
             let res = (self.eff)(&mut value);

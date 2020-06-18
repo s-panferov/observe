@@ -1,0 +1,22 @@
+[package]
+name = "observe_macro"
+version = "0.0.4"
+authors = ["Stanislav Panferov <fnight.m@gmail.com>"]
+edition = "2018"
+license = "MIT"
+description = "Implements observe decorators"
+homepage = "https://github.com/spanferov/observe"
+repository = "https://github.com/spanferov/observe"
+
+[dependencies]
+syn = { version = "1.0", features = ["full", "extra-traits"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+proc-macro-hack = "0.5"
+darling = "0.10"
+
+[dev-dependencies]
+observe = { path = "../" }
+
+[lib]
+proc-macro = true

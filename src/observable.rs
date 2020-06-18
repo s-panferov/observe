@@ -23,9 +23,9 @@ impl<'a, T> Deref for Ref<'a, T> {
 }
 
 pub trait Observable<T> {
-    fn access(&self, ctx: Option<&mut EvalContext>) -> Ref<T>;
+    fn access(&self, ctx: Option<&EvalContext>) -> Ref<T>;
 
-    fn get(&self, ctx: &mut EvalContext) -> Ref<T> {
+    fn get(&self, ctx: &EvalContext) -> Ref<T> {
         self.access(Some(ctx))
     }
 
@@ -44,7 +44,7 @@ pub trait Observable<T> {
 pub trait ObservableExt<T>: Observable<T> + Clone {
     fn map<R, F>(&self, handler: F) -> Computed<R>
     where
-        F: Fn(&mut EvalContext, &T) -> R + 'static,
+        F: Fn(&EvalContext, &T) -> R + 'static,
         R: Clone + Hash + 'static,
         Self: 'static,
     {
@@ -72,7 +72,7 @@ pub trait ObservableExt<T>: Observable<T> + Clone {
         let this = self.clone();
         let reaction = ComputedFuture::new({
             let this = this.clone();
-            move |ctx: &mut EvalContext| {
+            move |ctx: &EvalContext| {
                 use futures::sink::SinkExt;
                 let value = this.get(ctx).clone();
                 let mut sender = sender.clone();
