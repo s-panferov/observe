@@ -15,8 +15,8 @@ proc-macro2 = "1.0"
 proc-macro-hack = "0.5"
 darling = "0.10"
 
-[dev-dependencies]
-observe = { version = "^0.1.0", path = "../observe" }
+# [dev-dependencies]
+# observe = { version = "^0.1.0", path = "../observe" }
 
 [lib]
 proc-macro = true
