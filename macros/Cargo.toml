@@ -1,7 +1,7 @@
 [package]
-name = "observe_macro"
+name = "observe-macro"
 version = "0.1.0"
-authors = ["Stanislav Panferov <fnight.m@gmail.com>"]
+authors = ["Stanislav Panferov <stanislav@panferov.dev>"]
 edition = "2018"
 license = "MIT"
 description = "Implements observe decorators"

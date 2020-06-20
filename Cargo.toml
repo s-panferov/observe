@@ -5,7 +5,7 @@ authors = ["Stanislav Panferov <stanislav@panferov.dev>"]
 edition = "2018"
 
 [dependencies]
-observe_macro = { version="0.1.0", path="./macros" }
+observe-macro = { version="0.1.0", path="./macros" }
 tracing= "^0.1.13"
 futures = { version = "^0.3.4", optional = true }
 wasm-bindgen-futures = { version = "^0.4.9", optional = true }
