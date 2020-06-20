@@ -1,6 +1,6 @@
 [package]
 name = "observe_macro"
-version = "0.0.4"
+version = "0.1.0"
 authors = ["Stanislav Panferov <fnight.m@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -16,7 +16,7 @@ proc-macro-hack = "0.5"
 darling = "0.10"
 
 [dev-dependencies]
-observe = { path = "../" }
+observe = { version = "^0.1.0", path = "../" }
 
 [lib]
 proc-macro = true
