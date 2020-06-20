@@ -3,6 +3,10 @@ name = "observe"
 version = "0.1.0"
 authors = ["Stanislav Panferov <stanislav@panferov.dev>"]
 edition = "2018"
+description = "Rust declarative observables inspired by MobX"
+homepage = "https://github.com/spanferov/observe"
+repository = "https://github.com/spanferov/observe"
+keywords = ["observable", "reactive", "frp"]
 
 [dependencies]
 observe-macro = { version="0.1.0", path="../observe-macro" }
