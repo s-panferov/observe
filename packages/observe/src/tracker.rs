@@ -178,9 +178,9 @@ impl TrackerBody {
             .as_ref()
     }
 
-    pub fn hash(&self) -> u64 {
-        self.hash
-    }
+    // pub fn hash(&self) -> u64 {
+    //     self.hash
+    // }
 
     pub fn should_evaluate(&self) -> bool {
         match self.state {
