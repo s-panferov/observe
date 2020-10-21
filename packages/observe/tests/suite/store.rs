@@ -1,8 +1,9 @@
 use futures::Future;
 
 use observe::{
+    batch,
     future::{ComputedFuture, TokioLocal},
-    transaction, Computed, EvalContext, MutObservable, Observable, Transaction, Var,
+    Batch, Computed, EvalContext, MutObservable, Observable, Var,
 };
 
 use std::{fmt::Debug, hash::Hash, ops::Mul};
@@ -47,17 +48,17 @@ where
         futures::future::ready(10)
     }
 
-    pub fn action(&self, tx: &mut Transaction, value: T) {
-        self.value.set(tx, value);
+    pub fn action(&self, batch: &mut Batch, value: T) {
+        self.value.set(batch, value);
     }
 }
 
 #[test]
 fn store() {
     let store = Store::new(0);
-    transaction(None, |tx| {
-        store.action(tx, 10);
-        store.action(tx, 20);
-        store.action(tx, 30)
+    batch(None, |batch| {
+        store.action(batch, 10);
+        store.action(batch, 20);
+        store.action(batch, 30)
     })
 }

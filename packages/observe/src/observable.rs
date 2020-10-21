@@ -1,4 +1,4 @@
-use crate::{context::EvalContext, Computed, Transaction};
+use crate::{context::EvalContext, Batch, Computed};
 use std::{fmt::Debug, hash::Hash, ops::Deref};
 
 #[cfg(feature = "futures")]
@@ -89,12 +89,12 @@ pub trait ObservableExt<T>: Observable<T> + Clone {
 impl<T, V> ObservableExt<V> for T where T: Observable<V> + Clone {}
 
 pub trait MutObservable<T>: Observable<T> {
-    fn modify<F>(&self, tx: Option<&mut Transaction>, mapper: F)
+    fn modify<F>(&self, batch: Option<&mut Batch>, mapper: F)
     where
         F: FnOnce(&mut T);
 
-    fn set(&self, tx: &mut Transaction, value: T) {
-        self.modify(Some(tx), move |v| *v = value)
+    fn set(&self, batch: &mut Batch, value: T) {
+        self.modify(Some(batch), move |v| *v = value)
     }
 
     fn set_now(&self, value: T) {

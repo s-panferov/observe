@@ -8,7 +8,7 @@ use crate::hashed::Hashed;
 use crate::observable::{MutObservable, Observable, Ref};
 use crate::{
     tracker::{Evaluation, Invalidate, Tracker},
-    Transaction, Value,
+    Batch, Value,
 };
 
 pub struct Var<T>
@@ -116,7 +116,7 @@ impl<T> MutObservable<T> for VarBody<T>
 where
     T: Hash,
 {
-    fn modify<F>(&self, tx: Option<&mut Transaction>, mapper: F)
+    fn modify<F>(&self, batch: Option<&mut Batch>, mapper: F)
     where
         F: FnOnce(&mut T),
     {
@@ -126,7 +126,7 @@ where
         if hashed.hash != new_hash {
             hashed.hash = new_hash;
             std::mem::drop(hashed);
-            self.tracker.change(new_hash, Invalidate::OnlyDeps, tx);
+            self.tracker.change(new_hash, Invalidate::OnlyDeps, batch);
         }
     }
 }

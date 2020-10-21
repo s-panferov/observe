@@ -1,6 +1,6 @@
 use mockall::predicate::*;
 
-use observe::{transaction, Computed, MutObservable, Observable, Var};
+use observe::{batch, Computed, MutObservable, Observable, Var};
 
 use crate::suite::spy::{SharedMock, Spy};
 use enclose::enc;
@@ -48,7 +48,7 @@ fn check_autorun() {
 
     spy.get().checkpoint();
 
-    transaction(None, |tx| {
+    batch(None, |ctx| {
         spy.get()
             .expect_u32()
             .with(eq(40))
@@ -56,11 +56,11 @@ fn check_autorun() {
             .times(0);
 
         // inner transaction should NOT fire reactions
-        transaction(Some(tx), |tx| {
+        batch(Some(ctx), |ctx| {
             // this section would trigger reactions three times without transaction
-            value.set(tx, 20);
-            value.set(tx, 30);
-            value.set(tx, 40);
+            value.set(ctx, 20);
+            value.set(ctx, 30);
+            value.set(ctx, 40);
         });
 
         spy.get().checkpoint();

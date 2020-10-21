@@ -1,7 +1,6 @@
 use observe::{MutObservable, Observable, Var};
 
 use crate::suite::spy::{SharedMock, Spy};
-use enclose::enclose;
 
 #[test]
 fn simple_computed() {

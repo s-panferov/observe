@@ -11,12 +11,12 @@ macro_rules! computed {
 }
 
 #[macro_export]
-macro_rules! tx {
+macro_rules! batch {
     (( $($d_tt:tt)* ) $ctx:ident => $($b:tt)*) => {
-        observe::transaction(None, $crate::macros::enclose!(($( $d_tt )*) move |$ctx: &mut observe::Transaction| { $($b)* }))
+        observe::batch(None, $crate::macros::enclose!(($( $d_tt )*) move |$ctx: &mut observe::Batch| { $($b)* }))
     };
     ($ctx:ident => $($b:tt)*) => {
-        observe::transaction(None, move |$ctx: &mut observe::Transaction| { $($b)* })
+        observe::batch(None, move |$ctx: &mut observe::Batch| { $($b)* })
     };
 }
 

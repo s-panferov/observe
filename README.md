@@ -4,7 +4,7 @@ Lightweight Rust observables inspired by [MobX](https://mobx.js.org/).
 
 Note: **This library is unstable and is subject to change**
 
-The main goal of the library is to provide a generic re-usable state 
+The main goal of the library is to provide a generic re-usable state
 management library for Rust applications and games.
 
 Current state:
@@ -14,7 +14,7 @@ Current state:
   - [x] Value — a simple observable box with a value
   - [x] Computed — a calculation based on `Value`s and another `Computed` values
   - [x] Reaction — allows to setup callbacks and react to state changes
-  - [x] Transaction — allows to batch several changes
+  - [x] Batch — allows to batch several changes
 - [ ] Extra
   - [x] Observable `Future`
   - [ ] Do we need an observable `Vec` ?
@@ -23,15 +23,17 @@ Current state:
 ## Example
 
 ```rust
+use observe::{Var, batch, Observable, MutObservable};
+
 let mut value = Var::new(10);
-let double = observe::computed!((value) ctx => value.get(ctx) * 2);
+let double = observe::computed!((value) ctx => *value.get(ctx) * 2);
 let reaction = observe::autorun!((double) ctx => {
     println!("{}", *double.get(ctx));
 });
 
-transaction(None, |tx| {
-  value.set(20, tx);
-  value.set(30, tx);
-  value.set(40, tx);
+batch(None, |b| {
+  value.set(b, 20);
+  value.set(b, 30);
+  value.set(b, 40);
 });
 ```

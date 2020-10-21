@@ -13,8 +13,8 @@ use super::factory::FutureFactory;
 use super::runtime::FutureRuntime;
 
 use crate::{
-    observable::Ref, tracker::Evaluation, EvalContext, MutObservable, Observable, Tracker,
-    Transaction, Value, Var,
+    observable::Ref, tracker::Evaluation, Batch, EvalContext, MutObservable, Observable, Tracker,
+    Value, Var,
 };
 
 pub struct ComputedFuture<T, Rt>
@@ -171,11 +171,11 @@ where
     T: Hash + 'static,
     Rt: FutureRuntime + 'static,
 {
-    fn modify<F>(&self, tx: Option<&mut Transaction>, value: F)
+    fn modify<F>(&self, batch: Option<&mut Batch>, value: F)
     where
         F: FnOnce(&mut Poll<T>),
     {
-        self.current.modify(tx, value)
+        self.current.modify(batch, value)
     }
 }
 

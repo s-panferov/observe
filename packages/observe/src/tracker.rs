@@ -6,8 +6,8 @@ use std::sync::{Arc, Weak};
 
 use snowflake::ProcessUniqueId;
 
+use crate::batch::Batch;
 use crate::context::EvalContext;
-use crate::transaction::Transaction;
 
 pub enum Invalidate {
     SelfAndDeps,
@@ -73,12 +73,12 @@ impl Tracker {
         self.body.read().unwrap().hash
     }
 
-    pub fn change(&self, new_hash: u64, inv: Invalidate, tx: Option<&mut Transaction>) -> bool {
+    pub fn change(&self, new_hash: u64, inv: Invalidate, batch: Option<&mut Batch>) -> bool {
         let changed = self.body.write().unwrap().update_hash(new_hash, inv);
 
         if changed {
-            if let Some(tx) = tx {
-                tx.mark_changed(Tracker::downgrade(self));
+            if let Some(batch) = batch {
+                batch.mark_changed(Tracker::downgrade(self));
             } else {
                 self.notify_reactions()
             }

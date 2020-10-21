@@ -2,13 +2,13 @@ use std::collections::HashSet;
 
 use crate::tracker::WeakTracker;
 
-pub struct Transaction {
+pub struct Batch {
     changed: HashSet<WeakTracker>,
 }
 
-impl Transaction {
+impl Batch {
     fn new() -> Self {
-        Transaction {
+        Batch {
             changed: HashSet::new(),
         }
     }
@@ -17,7 +17,7 @@ impl Transaction {
         self.changed.insert(tracker)
     }
 
-    fn commit(&mut self) {
+    fn complete(&mut self) {
         for tracker in &self.changed {
             if let Some(tracker) = tracker.upgrade() {
                 tracker.notify_reactions()
@@ -26,13 +26,13 @@ impl Transaction {
     }
 }
 
-pub fn transaction<F: FnOnce(&mut Transaction)>(outer: Option<&mut Transaction>, func: F) {
+pub fn batch<F: FnOnce(&mut Batch)>(outer: Option<&mut Batch>, func: F) {
     if outer.is_some() {
-        let tx = outer.unwrap();
-        func(tx);
+        let batch = outer.unwrap();
+        func(batch);
     } else {
-        let mut tx = Transaction::new();
-        func(&mut tx);
-        tx.commit();
+        let mut batch = Batch::new();
+        func(&mut batch);
+        batch.complete();
     };
 }
