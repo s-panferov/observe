@@ -1,0 +1,21 @@
+[package]
+authors = ["Stanislav Panferov <stanislav@panferov.dev>"]
+description = "Rust declarative observables inspired by MobX"
+edition = "2021"
+homepage = "https://github.com/spanferov/observe"
+keywords = ["observable", "reactive", "frp"]
+license = "MIT"
+name = "observe"
+repository = "https://github.com/spanferov/observe"
+version = "0.1.0"
+
+[dependencies]
+enclose = "1.1.8"
+fxhash = "0.2.1"
+tracing= "0.1.37"
+smallvec={ version = "1.10.0", features = ["const_new"] }
+
+[features]
+
+[dev-dependencies]
+mockall = "0.11.3"
