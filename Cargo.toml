@@ -2,11 +2,11 @@
 authors = ["Stanislav Panferov <stanislav@panferov.dev>"]
 description = "Rust declarative observables inspired by MobX"
 edition = "2021"
-homepage = "https://github.com/spanferov/observe"
+homepage = "https://github.com/s-panferov/observe"
 keywords = ["observable", "reactive", "frp"]
 license = "MIT"
 name = "observe"
-repository = "https://github.com/spanferov/observe"
+repository = "https://github.com/s-panferov/observe"
 version = "1.0.0"
 
 [dependencies]
