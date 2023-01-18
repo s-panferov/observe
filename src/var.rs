@@ -54,6 +54,16 @@ where
 	}
 }
 
+pub trait Toggle {
+	fn toggle(&mut self);
+}
+
+impl Toggle for bool {
+	fn toggle(&mut self) {
+		*self = !*self
+	}
+}
+
 impl<T> Var<T>
 where
 	T: 'static,
@@ -101,6 +111,14 @@ where
 		T: Hash,
 	{
 		self.body.set(value)
+	}
+
+	#[inline]
+	pub fn toggle(&self)
+	where
+		T: Toggle + Hash,
+	{
+		self.update(T::toggle)
 	}
 
 	#[inline]
