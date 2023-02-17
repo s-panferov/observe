@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
+use crate::batch::{STARTED, in_batch};
 use crate::dependencies::Dependencies;
 use crate::{Derived, Evaluation, Invalid, State};
 
@@ -126,8 +127,13 @@ impl Derived for ReactionBody {
 	fn invalidate(self: Rc<Self>, invalid: crate::Invalid) {
 		let mut self_mut = self.inner.borrow_mut();
 		if matches!(self_mut.state, State::Valid) {
+			if !in_batch() {
+				panic!("Reaction was updated outside of the `batch` function");
+			}
+
 			self_mut.state = State::Invalid(invalid);
 			std::mem::drop(self_mut);
+
 			unsafe {
 				CHANGED
 					.borrow_mut()

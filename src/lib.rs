@@ -13,7 +13,7 @@ mod var;
 
 use std::rc::{Rc, Weak};
 
-pub use batch::batch;
+pub use batch::{batch, in_batch};
 pub use computed::Computed;
 pub use dependencies::Dependencies;
 pub use evaluation::Evaluation;

@@ -2,15 +2,20 @@ use std::cell::Cell;
 
 use crate::reaction::CHANGED;
 
-pub static mut STARTED: Cell<bool> = Cell::new(false);
+pub(crate) static mut STARTED: Cell<bool> = Cell::new(false);
+
+pub fn in_batch() -> bool {
+	unsafe { STARTED.get() }
+}
 
 // TODO: implement microtask planner
 pub fn batch(func: impl FnOnce()) {
-	func();
-
 	unsafe {
 		if !STARTED.get() {
 			STARTED.set(true);
+
+			func();
+
 			loop {
 				let changed = {
 					let mut borrow = CHANGED.borrow_mut();

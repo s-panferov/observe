@@ -23,11 +23,13 @@ where
 		Value { value }
 	}
 
-	pub fn get(&self, eval: &Evaluation) -> Ref<T> {
-		self.value.get(eval)
+	#[inline]
+	pub fn get(&self, eval: &impl AsRef<Evaluation>) -> Ref<'_, T> {
+		self.value.get(eval.as_ref())
 	}
 
-	pub fn get_once(&self) -> Ref<T> {
+	#[inline]
+	pub fn get_once(&self) -> Ref<'_, T> {
 		self.value.get_once()
 	}
 }
