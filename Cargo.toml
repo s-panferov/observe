@@ -7,7 +7,7 @@ keywords = ["observable", "reactive", "frp"]
 license = "MIT"
 name = "observe"
 repository = "https://github.com/s-panferov/observe"
-version = "1.0.0"
+version = "1.1.0"
 
 [dependencies]
 enclose = "1.1.8"
