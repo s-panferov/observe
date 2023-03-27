@@ -263,6 +263,15 @@ where
 	}
 }
 
+impl<T> Hash for Var<T>
+where
+	T: Hash,
+{
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		state.write_u64(self.body.value.borrow().hash);
+	}
+}
+
 impl<T> Debug for Var<T>
 where
 	T: 'static + Debug,
