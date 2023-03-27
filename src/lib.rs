@@ -11,9 +11,12 @@ mod reaction;
 mod value;
 mod var;
 
+#[cfg(target_arch = "wasm32")]
+mod microtask;
+
 use std::rc::{Rc, Weak};
 
-pub use batch::{batch, in_batch};
+pub use batch::{batch, batch_microtask, in_batch};
 pub use computed::Computed;
 pub use dependencies::Dependencies;
 pub use evaluation::Evaluation;

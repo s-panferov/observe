@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use crate::batch::{STARTED, in_batch};
+use crate::batch::in_batch;
 use crate::dependencies::Dependencies;
 use crate::{Derived, Evaluation, Invalid, State};
 
