@@ -96,13 +96,29 @@ where
 	}
 
 	#[inline]
-	pub fn get(&self, eval: &impl AsRef<Evaluation>) -> Ref<'_, T> {
+	pub fn get_ref(&self, eval: &impl AsRef<Evaluation>) -> Ref<'_, T> {
 		self.body.get(eval.as_ref())
 	}
 
 	#[inline]
-	pub fn get_once(&self) -> Ref<'_, T> {
+	pub fn get(&self, eval: &impl AsRef<Evaluation>) -> T
+	where
+		T: Clone,
+	{
+		self.body.get(eval.as_ref()).clone()
+	}
+
+	#[inline]
+	pub fn get_ref_once(&self) -> Ref<'_, T> {
 		self.body.get_once()
+	}
+
+	#[inline]
+	pub fn get_once(&self) -> T
+	where
+		T: Clone,
+	{
+		self.body.get_once().clone()
 	}
 
 	#[inline]
@@ -277,6 +293,6 @@ where
 	T: 'static + Debug,
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		self.get_once().fmt(f)
+		self.get_ref_once().fmt(f)
 	}
 }

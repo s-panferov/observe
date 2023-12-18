@@ -7,11 +7,11 @@ use mock::Spy;
 #[test]
 fn computed() {
 	let a = Var::new(10);
-	assert_eq!(*a.get_once(), 10);
+	assert_eq!(a.get_once(), 10);
 
 	let b = Computed::new(Box::new({
 		let a = a.clone();
-		move |cx| *a.get(cx) + 10
+		move |cx| a.get(cx) + 10
 	}));
 
 	assert_eq!(*b.get_once(), 20);
@@ -25,7 +25,7 @@ fn computed() {
 		let b = b.clone();
 		let mock = mock.clone();
 		move |cx| {
-			mock.get().trigger(*a.get(cx) + *b.get(cx));
+			mock.get().trigger(a.get(cx) + *b.get(cx));
 		}
 	}));
 
@@ -57,7 +57,7 @@ fn check_invalidation() {
 		let a = a.clone();
 		let mock = mock.clone();
 		move |cx| {
-			mock.get().trigger(*a.get(cx));
+			mock.get().trigger(a.get(cx));
 		}
 	}));
 
