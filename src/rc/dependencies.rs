@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};
 
-use crate::addr::RcAddr;
-use crate::{Derived, Observable, Version};
+use crate::rc::addr::RcAddr;
+use crate::rc::{Derived, Observable, Version};
 
 pub struct Dependencies {
 	based_on: BTreeMap<RcAddr<dyn Observable>, Version>,

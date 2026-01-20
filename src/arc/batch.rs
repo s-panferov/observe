@@ -1,12 +1,12 @@
-use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::reaction::CHANGED;
+use crate::arc::reaction::CHANGED;
 
-pub(crate) static mut STARTED: Cell<bool> = Cell::new(false);
-pub(crate) static mut MICROTASK: Cell<bool> = Cell::new(false);
+static STARTED: AtomicBool = AtomicBool::new(false);
+static MICROTASK: AtomicBool = AtomicBool::new(false);
 
 pub fn in_batch() -> bool {
-	unsafe { STARTED.get() }
+	STARTED.load(Ordering::Acquire)
 }
 
 pub fn batch(func: impl FnOnce()) {
@@ -21,44 +21,30 @@ pub fn batch(func: impl FnOnce()) {
 }
 
 fn batch_start() -> bool {
-	let mut we_started = false;
-	unsafe {
-		if !STARTED.get() {
-			STARTED.set(true);
-			we_started = true;
-		}
-	}
-
-	we_started
+	STARTED
+		.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+		.is_ok()
 }
 
 #[allow(unused)]
 fn batch_start_microtask() -> bool {
-	let mut we_started = false;
-	unsafe {
-		if !MICROTASK.get() {
-			MICROTASK.set(true);
-			we_started = true;
-		}
-	}
-
-	we_started
+	MICROTASK
+		.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+		.is_ok()
 }
 
 fn is_microtask_scheduled() -> bool {
-	unsafe { MICROTASK.get() }
+	MICROTASK.load(Ordering::Acquire)
 }
 
 fn batch_stop() {
-	unsafe {
-		STARTED.set(false);
-	}
+	STARTED.store(false, Ordering::Release);
 }
 
 pub fn batch_run() {
 	loop {
 		let changed = {
-			let mut borrow = unsafe { CHANGED.borrow_mut() };
+			let mut borrow = unsafe { CHANGED.lock() };
 			let items = std::mem::replace(&mut *borrow, Vec::new());
 			std::mem::drop(borrow);
 
@@ -96,9 +82,7 @@ pub fn batch_microtask(func: impl FnOnce()) {
 	if is_first_microtask {
 		crate::microtask::queue(|| {
 			batch_run();
-			unsafe {
-				MICROTASK.set(false);
-			}
+			MICROTASK.store(false, Ordering::Release);
 		});
 	}
 }

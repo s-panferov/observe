@@ -1,4 +1,4 @@
-use observe::{batch, Computed, Reaction, Var};
+use observe::rc::{batch, Computed, Reaction, Var};
 
 mod mock;
 

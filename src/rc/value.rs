@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::rc::Rc;
 
-use crate::{Evaluation, Observable};
+use crate::rc::{Evaluation, Observable};
 
 pub struct Value<T> {
 	value: Rc<dyn Access<T>>,

@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use crate::dependencies::Dependencies;
-use crate::{Derived, Observable, Version};
+use crate::rc::dependencies::Dependencies;
+use crate::rc::{Derived, Observable, Version};
 
 pub struct Evaluation {
 	inner: RefCell<EvaluationInner>,

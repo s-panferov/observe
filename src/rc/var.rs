@@ -5,10 +5,11 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
-use crate::addr::WeakAddr;
-use crate::evaluation::Evaluation;
-use crate::value::{Access, Value};
-use crate::{Computed, Derived, Hashed, Invalid, Observable, Version};
+use crate::hashed::Hashed;
+use crate::rc::addr::WeakAddr;
+use crate::rc::evaluation::Evaluation;
+use crate::rc::value::{Access, Value};
+use crate::rc::{Computed, Derived, Invalid, Observable, Version};
 
 pub struct Var<T> {
 	body: Rc<VarBody<T>>,
@@ -212,12 +213,15 @@ impl<T> VarBody<T> {
 	}
 
 	fn invalidate(&self) {
-		let self_mut = self.inner.borrow();
-		for item in &self_mut.used_by {
+		let mut self_mut = self.inner.borrow_mut();
+		self_mut.used_by.retain(|item| {
 			if let Some(item) = item.upgrade() {
-				item.invalidate(Invalid::Definitely)
+				item.invalidate(Invalid::Definitely);
+				true
+			} else {
+				false
 			}
-		}
+		});
 	}
 
 	fn used_by(&self, derived: Weak<dyn Derived>) {
@@ -261,12 +265,12 @@ impl<T> Access<T> for VarBody<T>
 where
 	T: 'static,
 {
-	fn get(&self, eval: &Evaluation) -> crate::value::Ref<'_, T> {
-		crate::value::Ref::Cell(VarBody::get(self, eval))
+	fn get(&self, eval: &Evaluation) -> crate::rc::value::Ref<'_, T> {
+		crate::rc::value::Ref::Cell(VarBody::get(self, eval))
 	}
 
-	fn get_once(&self) -> crate::value::Ref<'_, T> {
-		crate::value::Ref::Cell(VarBody::get_once(&self))
+	fn get_once(&self) -> crate::rc::value::Ref<'_, T> {
+		crate::rc::value::Ref::Cell(VarBody::get_once(&self))
 	}
 }
 

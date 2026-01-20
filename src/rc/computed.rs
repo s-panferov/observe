@@ -1,13 +1,15 @@
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::collections::BTreeSet;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
-use crate::addr::WeakAddr;
-use crate::dependencies::Dependencies;
-use crate::value::Access;
-use crate::{Derived, Evaluation, Hashed, Invalid, Observable, State, Value, Version};
+use crate::hashed::Hashed;
+use crate::rc::addr::WeakAddr;
+use crate::rc::dependencies::Dependencies;
+use crate::rc::value::Access;
+use crate::rc::{Derived, Evaluation, Invalid, Observable, State, Value, Version};
 
 pub struct Computed<T>
 where
@@ -202,12 +204,12 @@ impl<T> Access<T> for ComputedBody<T>
 where
 	T: Hash + 'static,
 {
-	fn get(&self, tracker: &Evaluation) -> crate::value::Ref<'_, T> {
-		crate::value::Ref::Cell(self.get(tracker))
+	fn get(&self, tracker: &Evaluation) -> crate::rc::value::Ref<'_, T> {
+		crate::rc::value::Ref::Cell(self.get(tracker))
 	}
 
-	fn get_once(&self) -> crate::value::Ref<'_, T> {
-		crate::value::Ref::Cell(self.get_once())
+	fn get_once(&self) -> crate::rc::value::Ref<'_, T> {
+		crate::rc::value::Ref::Cell(self.get_once())
 	}
 }
 
@@ -215,15 +217,18 @@ impl<T: 'static> Derived for ComputedBody<T>
 where
 	T: Hash + 'static,
 {
-	fn invalidate(self: Rc<Self>, invalid: crate::Invalid) {
+	fn invalidate(self: Rc<Self>, invalid: crate::rc::Invalid) {
 		let mut self_mut = self.inner.borrow_mut();
 		if matches!(self_mut.state, State::Valid) {
 			self_mut.state = State::Invalid(invalid);
-			for item in &self_mut.used_by {
+			self_mut.used_by.retain(|item| {
 				if let Some(item) = item.upgrade() {
 					item.invalidate(Invalid::Maybe);
+					true
+				} else {
+					false
 				}
-			}
+			});
 		}
 	}
 }
@@ -234,5 +239,14 @@ where
 {
 	fn from(computed: Computed<T>) -> Self {
 		Value::new(computed.body)
+	}
+}
+
+impl<T> Debug for Computed<T>
+where
+	T: Hash + Debug + 'static,
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		self.get_once().fmt(f)
 	}
 }

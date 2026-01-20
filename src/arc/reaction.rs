@@ -1,15 +1,16 @@
-use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use std::sync::{Arc, Weak};
 
-use crate::batch::in_batch;
-use crate::dependencies::Dependencies;
-use crate::{Derived, Evaluation, Invalid, State};
+use parking_lot::Mutex;
+
+use crate::arc::batch::in_batch;
+use crate::arc::dependencies::Dependencies;
+use crate::arc::{Derived, Evaluation, Invalid, State};
 
 pub trait Reactive {
 	fn update(&self);
 }
 
-pub static mut CHANGED: RefCell<Vec<Weak<dyn Reactive>>> = RefCell::new(vec![]);
+pub static mut CHANGED: Mutex<Vec<Weak<dyn Reactive>>> = Mutex::new(vec![]);
 
 #[derive(Default, Clone)]
 pub struct Reactions<const N: usize> {
@@ -35,18 +36,18 @@ impl<const N: usize> Reactions<N> {
 
 #[derive(Clone)]
 pub struct Reaction {
-	pub(crate) body: Rc<ReactionBody>,
+	pub(crate) body: Arc<ReactionBody>,
 }
 
 pub struct ReactionBody {
-	pub(crate) inner: RefCell<ReactionInner>,
+	pub(crate) inner: Mutex<ReactionInner>,
 }
 
 pub struct ReactionInner {
 	state: State,
 	#[allow(unused)]
 	pub(crate) name: &'static str,
-	func: Box<dyn Fn(&Evaluation)>,
+	func: Box<dyn Fn(&Evaluation) + Send>,
 	dependencies: Dependencies,
 	this: Weak<ReactionBody>,
 }
@@ -60,15 +61,15 @@ impl Drop for ReactionInner {
 
 impl Reaction {
 	#[must_use]
-	pub fn new(func: Box<dyn Fn(&Evaluation)>) -> Self {
+	pub fn new(func: Box<dyn Fn(&Evaluation) + Send>) -> Self {
 		Self::new_with_name("<unnamed>", func)
 	}
 
 	#[must_use]
-	pub fn new_with_name(name: &'static str, func: Box<dyn Fn(&Evaluation)>) -> Self {
+	pub fn new_with_name(name: &'static str, func: Box<dyn Fn(&Evaluation) + Send>) -> Self {
 		Reaction {
-			body: Rc::new_cyclic(|this| ReactionBody {
-				inner: RefCell::new(ReactionInner {
+			body: Arc::new_cyclic(|this| ReactionBody {
+				inner: Mutex::new(ReactionInner {
 					func,
 					name,
 					state: State::Invalid(Invalid::Definitely),
@@ -82,9 +83,9 @@ impl Reaction {
 	pub fn update_unchecked(&self) {
 		// NOTE: this logic is shared with the Self::update
 
-		let mut self_mut = self.body.inner.borrow_mut();
+		let mut self_mut = self.body.inner.lock();
 
-		let this = Rc::downgrade(&self.body) as Weak<dyn Derived>;
+		let this = Arc::downgrade(&self.body) as Weak<dyn Derived>;
 		let tracker = Evaluation::new(this.clone());
 		(self_mut.func)(&tracker);
 
@@ -99,7 +100,7 @@ impl Reaction {
 
 impl Reactive for ReactionBody {
 	fn update(&self) {
-		let mut self_mut = self.inner.borrow_mut();
+		let mut self_mut = self.inner.lock();
 
 		let is_valid = match self_mut.state {
 			State::Valid => true,
@@ -124,8 +125,8 @@ impl Reactive for ReactionBody {
 }
 
 impl Derived for ReactionBody {
-	fn invalidate(self: Rc<Self>, invalid: crate::Invalid) {
-		let mut self_mut = self.inner.borrow_mut();
+	fn invalidate(self: Arc<Self>, invalid: crate::arc::Invalid) {
+		let mut self_mut = self.inner.lock();
 		if matches!(self_mut.state, State::Valid) {
 			if !in_batch() {
 				panic!("Reaction was updated outside of the `batch` function");
@@ -136,9 +137,17 @@ impl Derived for ReactionBody {
 
 			unsafe {
 				CHANGED
-					.borrow_mut()
-					.push(Rc::downgrade(&self) as Weak<dyn Reactive>)
+					.lock()
+					.push(Arc::downgrade(&self) as Weak<dyn Reactive>)
 			}
 		}
+	}
+}
+
+impl std::fmt::Debug for Reaction {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Reaction")
+			.field("name", &self.body.inner.lock().name)
+			.finish()
 	}
 }

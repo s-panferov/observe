@@ -7,6 +7,12 @@ pub struct Hashed<T> {
 	pub hash: u64,
 }
 
+impl<T> PartialEq for Hashed<T> {
+	fn eq(&self, other: &Self) -> bool {
+		self.hash == other.hash
+	}
+}
+
 impl<T> Hashed<T> {
 	pub fn new(value: T) -> Self
 	where
